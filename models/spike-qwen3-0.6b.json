@@ -1,0 +1,10 @@
+{
+  "name": "Qwen3-0.6B (spike proxy)",
+  "repo": "ggml-org/Qwen3-0.6B-GGUF",
+  "revision": "13ac06624948e4d8589cb4b6f90100837342fcb8",
+  "filename": "Qwen3-0.6B-Q8_0.gguf",
+  "quantization": "Q8_0",
+  "license": "Apache-2.0",
+  "sha256": "361cc68159042c36ebff7715dc5a2e4612153e88f3e9c9c234820849d6dc9e1d",
+  "size_bytes": 804753632
+}

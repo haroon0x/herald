@@ -7,10 +7,12 @@
 
 pub mod action;
 pub mod error;
+pub mod intent;
 pub mod policy;
 pub mod prompt;
 pub mod provider;
 pub mod rules;
+pub mod schema;
 pub mod state;
 pub mod time;
 

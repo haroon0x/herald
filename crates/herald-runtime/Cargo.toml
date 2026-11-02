@@ -1,6 +1,6 @@
 [package]
 name = "herald-runtime"
-description = "Managed llama.cpp sidecar and model manifest for Herald"
+description = "Managed llama.cpp sidecar, model manifest, and downloader for Herald"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

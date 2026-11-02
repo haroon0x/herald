@@ -85,6 +85,24 @@ fn find_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
     lower.find(needle)
 }
 
+/// The unvalidated target a user's description points at.
+///
+/// Exposed as a hint for the tiered planner: the model (or CLI) produces a
+/// human description, and the provider adapter resolves it against real data.
+/// A hint is never a recipient.
+#[must_use]
+pub fn target_hint(text: &str) -> Target {
+    extract_target(text)
+}
+
+/// The exact outbound text embedded in the instruction, if any.
+///
+/// Failure to find one is not an error: the caller must not invent wording.
+#[must_use]
+pub fn body_hint(text: &str) -> Option<String> {
+    extract_body(text)
+}
+
 fn extract_body(text: &str) -> Option<String> {
     const MARKERS: [&str; 5] = [
         "saying",

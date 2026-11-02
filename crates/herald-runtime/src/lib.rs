@@ -4,6 +4,7 @@
 //! loopback only, uses a random per-run token, and never requires the user to
 //! install Ollama or a Python stack.
 
+pub mod download;
 pub mod manifest;
 pub mod sidecar;
 
@@ -27,11 +28,18 @@ pub enum RuntimeError {
         expected: String,
         actual: String,
     },
+    #[error("download failed: HTTP {status} for {url}")]
+    DownloadFailed { status: u16, url: String },
+    #[error("the server does not support resumable downloads (range unsupported): {url}")]
+    RangeUnsupported { url: String },
     #[error("the inference server did not become ready in time")]
     StartupTimeout,
     #[error("the inference server returned an invalid response: {0}")]
     BadResponse(String),
 }
 
+pub use download::{DownloadStats, download_model, download_url};
 pub use manifest::ModelManifest;
-pub use sidecar::{ChatMessage, LlamaSidecar, SidecarConfig, free_loopback_port};
+pub use sidecar::{
+    ChatMessage, LlamaSidecar, SidecarConfig, binary_from_env, free_loopback_port, model_path,
+};

@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dev-dependencies]
+jsonschema = "0.38"
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true

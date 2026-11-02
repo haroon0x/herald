@@ -43,6 +43,19 @@ pub enum Operation {
 
 impl Operation {
     #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ListRecentMessages => "list_recent_messages",
+            Self::ListUnreadMessages => "list_unread_messages",
+            Self::GetThread => "get_thread",
+            Self::SearchMessages => "search_messages",
+            Self::SummarizeThread => "summarize_thread",
+            Self::PrepareReply => "prepare_reply",
+            Self::SendReply => "send_reply",
+        }
+    }
+
+    #[must_use]
     pub const fn is_outbound(self) -> bool {
         matches!(self, Self::SendReply)
     }

@@ -200,9 +200,47 @@ impl LlamaSidecar {
 
     /// Send a chat completion and return the assistant text.
     ///
-    /// Routine planning uses a short token budget and JSON response format to
-    /// reduce latency and malformed output.
+    /// When `schema` is given the server grammar-constrains generation to that
+    /// JSON schema, which is how a small local model is prevented from
+    /// inventing keys or operations.
     pub async fn complete_json(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: u16,
+        schema: Option<&serde_json::Value>,
+    ) -> Result<String, RuntimeError> {
+        let response_format = match schema {
+            None => json!({"type": "json_object"}),
+            Some(schema) => json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "ActionPlan",
+                    "strict": true,
+                    "schema": schema,
+                }
+            }),
+        };
+
+        let body = json!({
+            "messages": [
+                ChatMessage::system(system),
+                ChatMessage::user(user),
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "response_format": response_format,
+            "stream": false,
+        });
+
+        self.complete(body).await
+    }
+
+    /// Send a plain-text chat completion and return the assistant text.
+    ///
+    /// Used for tier 3 drafting: plain text in, plain text out, no schema and
+    /// no JSON mode anywhere on this path.
+    pub async fn complete_text(
         &self,
         system: &str,
         user: &str,
@@ -215,10 +253,14 @@ impl LlamaSidecar {
             ],
             "max_tokens": max_tokens,
             "temperature": 0.0,
-            "response_format": {"type": "json_object"},
             "stream": false,
         });
 
+        self.complete(body).await
+    }
+
+    /// Post one chat-completion body and extract the assistant text.
+    async fn complete(&self, body: Value) -> Result<String, RuntimeError> {
         let response = self
             .client
             .post(format!("{}/v1/chat/completions", self.endpoint))

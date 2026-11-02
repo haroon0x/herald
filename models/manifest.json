@@ -1,0 +1,10 @@
+{
+  "name": "Qwen3.5-2B",
+  "repo": "gguf/Qwen3.5-2B-GGUF",
+  "revision": "PIN_REVISION_AFTER_SPIKE",
+  "filename": "Qwen3.5-2B-Q4_K_M.gguf",
+  "quantization": "Q4_K_M",
+  "license": "Apache-2.0 (upstream model); verify GGUF artifact provenance",
+  "sha256": "PIN_SHA256_AFTER_DOWNLOAD",
+  "size_bytes": 0
+}

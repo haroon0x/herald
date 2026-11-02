@@ -1,0 +1,10 @@
+/target
+/data
+/models/*.gguf
+/profiles
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.DS_Store

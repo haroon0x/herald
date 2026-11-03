@@ -1,0 +1,35 @@
+{
+  "source": "out/prompt_hidden.npz",
+  "majority": 0.7619047619047619,
+  "permutation": {
+    "mean": 0.4511904761904762,
+    "max": 0.5238095238095238
+  },
+  "top": [
+    {
+      "hidden_index": 13,
+      "accuracy": 0.5952380952380952,
+      "lambda": 0.001
+    },
+    {
+      "hidden_index": 24,
+      "accuracy": 0.5476190476190477,
+      "lambda": 0.001
+    },
+    {
+      "hidden_index": 9,
+      "accuracy": 0.5476190476190477,
+      "lambda": 10.0
+    },
+    {
+      "hidden_index": 25,
+      "accuracy": 0.5238095238095238,
+      "lambda": 0.001
+    },
+    {
+      "hidden_index": 23,
+      "accuracy": 0.5238095238095238,
+      "lambda": 0.001
+    }
+  ]
+}

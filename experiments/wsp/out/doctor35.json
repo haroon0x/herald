@@ -1,0 +1,130 @@
+{
+  "model": "out/model35",
+  "dtype": "bf16",
+  "core_correct": 6,
+  "core_total": 11,
+  "control_correct": 3,
+  "control_total": 4,
+  "results": [
+    {
+      "id": "ctl-arith",
+      "kind": "control",
+      "answer": "A",
+      "got": "A",
+      "ok": true,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "ctl-sum",
+      "kind": "control",
+      "answer": "A",
+      "got": "B",
+      "ok": false,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "ctl-order",
+      "kind": "control",
+      "answer": "A",
+      "got": "A",
+      "ok": true,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "ctl-big",
+      "kind": "control",
+      "answer": "A",
+      "got": "A",
+      "ok": true,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "core-linalg",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-read",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-decode",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-site",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-alpha",
+      "kind": "core",
+      "answer": "A",
+      "got": "A",
+      "ok": true,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "core-obstacle",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-missing",
+      "kind": "core",
+      "answer": "B",
+      "got": "A",
+      "ok": false,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "core-grammar",
+      "kind": "core",
+      "answer": "B",
+      "got": "A",
+      "ok": false,
+      "raw": "Answer: A"
+    },
+    {
+      "id": "core-scope",
+      "kind": "core",
+      "answer": "A",
+      "got": "B",
+      "ok": false,
+      "raw": "Answer: B"
+    },
+    {
+      "id": "core-verify",
+      "kind": "core",
+      "answer": "B",
+      "got": "C",
+      "ok": false,
+      "raw": "Answer: C"
+    },
+    {
+      "id": "core-role",
+      "kind": "core",
+      "answer": "B",
+      "got": "A",
+      "ok": false,
+      "raw": "Answer: A"
+    }
+  ]
+}

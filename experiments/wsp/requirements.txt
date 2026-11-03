@@ -1,0 +1,10 @@
+# Versions the recorded results were produced with.
+#
+# torch: the recorded runs used the CPU build. A CUDA build of the same version
+# is a drop-in replacement and roughly 20-50x faster on the 42-case eval.
+# python 3.14 is required for the pinned torch build.
+numpy>=2.5
+torch>=2.9
+transformers>=5.22
+scikit-learn>=1.9
+accelerate>=1.15

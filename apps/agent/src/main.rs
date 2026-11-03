@@ -14,6 +14,7 @@ use herald_provider::{CommunicationProvider, ProviderHealth};
 use herald_storage::{AuditEvent, Store, new_action};
 
 mod engine;
+mod execute;
 
 use crate::engine::{Engine, ModelSetup, plan_via_classifier};
 
@@ -41,7 +42,7 @@ enum Commands {
     /// Turn an instruction into a validated plan and show the policy decision.
     Plan {
         instruction: String,
-        #[arg(long, default_value = "gmail")]
+        #[arg(long, default_value = "fake")]
         provider: String,
         /// rules | auto (rules first, model fallback) | model
         #[arg(long, default_value = "rules")]
@@ -299,14 +300,8 @@ async fn plan_command(
 
     match &decision {
         herald_core::Decision::Allowed => {
-            println!("decision:  allowed (no account mutation)");
-            println!("note:      plan only; provider execution lands in Phase 2");
-            store.append_audit(&AuditEvent {
-                action_id: Some(action_id),
-                at_ms: now_ms(),
-                status: "allowed".into(),
-                detail: "read/draft is local".into(),
-            })?;
+            println!("decision:  allowed (read/draft is local)");
+            execute_allowed(&action, &store, &action_id).await?;
         }
         herald_core::Decision::NeedsApproval(request) => {
             store.transition_action(&action_id, ActionState::AwaitingApproval)?;
@@ -390,6 +385,70 @@ async fn draft_missing_body(setup: &mut ModelSetup, plan: &mut ActionPlan, instr
     }
 }
 
+/// Runs an allowed action through the local execution loop.
+///
+/// A provider without an adapter keeps its plan record and is audited as
+/// deferred rather than pretending the read happened.
+async fn execute_allowed(action: &Action, store: &Store, action_id: &str) -> Result<()> {
+    let adapter = execute::adapter(action.provider());
+    if matches!(action, Action::Read(_)) && adapter.is_none() {
+        println!(
+            "execution: skipped — no {} adapter yet; plan only",
+            action.provider()
+        );
+        store.append_audit(&AuditEvent {
+            action_id: Some(action_id.to_string()),
+            at_ms: now_ms(),
+            status: "deferred".into(),
+            detail: format!("no {} adapter", action.provider()),
+        })?;
+        return Ok(());
+    }
+
+    match execute::execute(action, adapter.as_deref(), store, action_id).await {
+        Ok(outcome) => print_outcome(&outcome),
+        Err(error) => println!("execution: failed — {error}"),
+    }
+    Ok(())
+}
+
+fn print_outcome(outcome: &execute::ExecutionOutcome) {
+    use execute::ExecutionOutcome;
+
+    match outcome {
+        ExecutionOutcome::Messages {
+            summaries,
+            new_count,
+        } => {
+            if summaries.is_empty() {
+                println!("messages:  none");
+            }
+            for message in summaries {
+                let flag = if message.unread { "*" } else { " " };
+                println!(
+                    "{flag} {:<32} {:<40} [{}]",
+                    message.sender, message.subject, message.thread_id
+                );
+                println!("  id: {}", message.id);
+            }
+            println!("new:       {new_count} recorded");
+        }
+        ExecutionOutcome::Thread { thread, new_count } => {
+            println!("thread:    {} — {}", thread.subject, thread.messages.len());
+            for message in &thread.messages {
+                println!("\n--- {} ---", message.sender);
+                let body: String = message.body.as_ref().chars().take(500).collect();
+                println!("{body}");
+            }
+            println!("new:       {new_count} recorded");
+        }
+        ExecutionOutcome::Draft { body_hash } => {
+            println!("draft:     prepared locally (nothing sent)");
+            println!("hash:      {body_hash}");
+        }
+    }
+}
+
 fn raw_operation(action: &Action) -> &'static str {
     match action {
         Action::Read(read) => match read.operation {
@@ -419,9 +478,9 @@ async fn providers() -> Result<()> {
         ProviderHealth::NotAuthenticated => "not authenticated",
         ProviderHealth::Unavailable(_) => "unavailable",
     };
-    println!("fake      {label}  (in-memory, deterministic)");
-    println!("gmail     not implemented");
-    println!("x         not implemented");
+    println!("fake      {label}  (in-memory, deterministic; executable)");
+    println!("gmail     not implemented (plans only, execution skipped)");
+    println!("x         not implemented (plans only, execution skipped)");
     Ok(())
 }
 
@@ -528,6 +587,7 @@ fn default_false() -> bool {
     false
 }
 
+#[derive(Debug)]
 enum EvalOutcome {
     Pass(String),
     Fail(String),
@@ -576,7 +636,7 @@ async fn eval_command(
             Engine::Auto => match rules::plan_offline(provider, &case.instruction) {
                 Some(plan) => {
                     rule_passes += 1;
-                    score_model_or_rules(Ok(plan), case)
+                    score_plan(plan, case, "rules")
                 }
                 None => match setup.as_mut() {
                     Some(setup) => score_model_or_rules(
@@ -618,16 +678,18 @@ async fn eval_command(
 }
 
 fn score_rules(plan: Option<herald_core::ActionPlan>, case: &EvalCase) -> EvalOutcome {
-    if case.clarify {
-        return if plan.is_none() {
-            EvalOutcome::Pass("rules".into())
-        } else {
-            EvalOutcome::Fail("expected deferral to clarification, got a plan".into())
-        };
-    }
-
     let Some(plan) = plan else {
-        return EvalOutcome::Fail("no deterministic plan (needs the model fallback)".into());
+        // "No plan" is not a clarification. The live path prints "No plan for
+        // this instruction." and stops, so counting it as a pass for a
+        // clarification case inflated the rules engine: the router has no way to
+        // ask a question, it only declines.
+        return if case.clarify {
+            EvalOutcome::Fail(
+                "rules router declined; declining is not a clarification question".into(),
+            )
+        } else {
+            EvalOutcome::Fail("no deterministic plan (needs the model fallback)".into())
+        };
     };
     score_plan(plan, case, "rules")
 }
@@ -636,14 +698,11 @@ fn score_model_or_rules(
     result: Result<herald_core::ActionPlan, anyhow::Error>,
     case: &EvalCase,
 ) -> EvalOutcome {
-    if case.clarify {
-        return if result.is_err() {
-            EvalOutcome::Pass("model".into())
-        } else {
-            EvalOutcome::Fail("expected clarification, got a plan".into())
-        };
-    }
-
+    // `score_plan` already knows how to judge a clarification case, by reading
+    // `plan.needs_clarification`. The previous version asked whether the model
+    // *errored* instead, which failed every case the model clarified correctly
+    // (it returns Ok with the flag set) and passed every case where the model
+    // crashed -- the exact inverse of what it meant to measure.
     match result {
         Ok(plan) => score_plan(plan, case, "model"),
         Err(error) => EvalOutcome::Fail(format!("model failed: {error}")),
@@ -692,5 +751,81 @@ fn score_plan(plan: herald_core::ActionPlan, case: &EvalCase, who: &str) -> Eval
     match validate_plan(plan) {
         Ok(_) => EvalOutcome::Pass(who.into()),
         Err(error) => EvalOutcome::Fail(format!("plan did not validate: {error}")),
+    }
+}
+
+#[cfg(test)]
+mod eval_scoring_tests {
+    use super::*;
+    use herald_core::{ActionPlan, Operation, ProviderId, Target};
+
+    fn case(id: &str, operation: Option<&str>, clarify: bool) -> EvalCase {
+        EvalCase {
+            id: id.into(),
+            instruction: "irrelevant for scoring".into(),
+            operation: operation.map(str::to_string),
+            clarify,
+            body_contains: None,
+        }
+    }
+
+    fn plan(operation: Operation, needs_clarification: bool) -> ActionPlan {
+        ActionPlan {
+            provider: ProviderId::Fake,
+            operation,
+            target: Target::Description {
+                description: "the latest message".into(),
+            },
+            reply_body: None,
+            needs_clarification,
+            clarification_question: None,
+        }
+    }
+
+    /// The regression this file exists for: a model that *correctly* clarifies
+    /// returns `Ok(plan)` with the flag set. The old scorer asked whether the
+    /// result was an error, so every correct clarification was scored a failure
+    /// and every crash was scored a pass.
+    #[test]
+    fn a_model_that_asks_a_question_passes_a_clarify_case() {
+        let outcome = score_model_or_rules(
+            Ok(plan(Operation::ListUnreadMessages, true)),
+            &case("ambiguous", None, true),
+        );
+        assert!(matches!(outcome, EvalOutcome::Pass(_)), "got {outcome:?}");
+    }
+
+    #[test]
+    fn a_model_that_plans_anyway_fails_a_clarify_case() {
+        let outcome = score_model_or_rules(
+            Ok(plan(Operation::ListUnreadMessages, false)),
+            &case("ambiguous", None, true),
+        );
+        assert!(matches!(outcome, EvalOutcome::Fail(_)), "got {outcome:?}");
+    }
+
+    #[test]
+    fn a_model_error_is_not_a_clarification() {
+        let outcome = score_model_or_rules(
+            Err(anyhow::anyhow!("sidecar timed out")),
+            &case("ambiguous", None, true),
+        );
+        assert!(matches!(outcome, EvalOutcome::Fail(_)), "got {outcome:?}");
+    }
+
+    /// A rules decline is not an example of clarifying, so it must not pass.
+    #[test]
+    fn declining_is_not_clarifying() {
+        let outcome = score_rules(None, &case("ambiguous", None, true));
+        assert!(matches!(outcome, EvalOutcome::Fail(_)), "got {outcome:?}");
+    }
+
+    #[test]
+    fn a_plain_plan_still_passes_a_plain_case() {
+        let outcome = score_model_or_rules(
+            Ok(plan(Operation::ListUnreadMessages, false)),
+            &case("check-mail", Some("list_unread_messages"), false),
+        );
+        assert!(matches!(outcome, EvalOutcome::Pass(_)), "got {outcome:?}");
     }
 }

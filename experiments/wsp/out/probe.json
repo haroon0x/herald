@@ -1,0 +1,37 @@
+{
+  "actionable_passing": 13,
+  "actionable_failing": 19,
+  "chosen_layer": 27,
+  "top_layers": [
+    {
+      "layer": 27,
+      "hidden_index": 28,
+      "separation": 29.00058364868164
+    },
+    {
+      "layer": 26,
+      "hidden_index": 27,
+      "separation": 28.606294631958008
+    },
+    {
+      "layer": 24,
+      "hidden_index": 25,
+      "separation": 28.027250289916992
+    },
+    {
+      "layer": 25,
+      "hidden_index": 26,
+      "separation": 27.888225555419922
+    },
+    {
+      "layer": 23,
+      "hidden_index": 24,
+      "separation": 27.803518295288086
+    },
+    {
+      "layer": 22,
+      "hidden_index": 23,
+      "separation": 27.596920013427734
+    }
+  ]
+}

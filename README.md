@@ -10,10 +10,13 @@ instruction -> plan (rules now, local model next) -> typed action
             -> SQLite state + audit log
 ```
 
-Status: **Phase 0/1 skeleton.** The agent shell, typed action model, policy
-engine, idempotent state machine, storage, provider boundary, and managed
-inference runtime exist. No provider adapter talks to a real service yet, and no
-model is downloaded yet. Nothing can send anything.
+Status: **Phase 0/1 skeleton with a working local read/draft loop.** The agent
+shell, typed action model, policy engine, idempotent state machine, storage,
+provider boundary, and managed inference runtime exist. `fake` is the only
+executable adapter: reads run through it, persist deduped message metadata, and
+transition their action records; drafts are prepared locally. No adapter talks
+to a real service yet, no model is downloaded yet, and nothing can send
+anything. `--provider gmail` and `--provider x` are plan-only until Phase 2.
 
 ## Safety model
 
@@ -39,8 +42,10 @@ crates/herald-core       typed actions, validation, policy, state machine, promp
 crates/herald-provider   capability trait + deterministic fake provider
 crates/herald-storage    SQLite migrations, message dedupe, action records, audit
 crates/herald-runtime    model manifest, checksums, llama-server sidecar client
-apps/agent               herald CLI (doctor, plan, providers, inbox, thread, history)
-docs/                    architecture, roadmap, decision records
+apps/agent               herald CLI (doctor, plan, providers, inbox, thread, history,
+                         eval, execution loop)
+docs/                    architecture, roadmap, decision records, status report
+experiments/wsp/         weight-space programming pilot (small-model harness)
 models/manifest.json     pinned model identity (checksum filled after the spike)
 ```
 
@@ -55,13 +60,21 @@ export HERALD_DATA_DIR=/tmp/opencode/herald-data
 herald doctor
 herald plan "Check whether I have anything important."
 herald plan "Summarize the latest email from the founder."
+herald plan "Draft a reply saying I'm interested."
 herald plan 'Send exactly: "Thanks, I will review this."' --enable-send
+herald eval --engine rules
 herald history
 ```
 
-`plan` maps the instruction deterministically (no inference), prints the typed
-action and the policy decision, and records the action and audit event locally.
-`--enable-send` only demonstrates the approval path; nothing is sent.
+`plan` maps the instruction deterministically (no inference), validates it,
+applies policy, and executes allowed reads against the fake provider. Message
+metadata is deduped in SQLite, action records move through the state machine,
+and every step is audited. Drafts stay local. `--enable-send` only demonstrates
+the approval path; nothing is sent.
+
+`eval` scores the checked-in command set (`eval/commands.json`, 42 cases
+including prompt-injection and ambiguity cases) against the rules engine or a
+local model.
 
 ## Development
 

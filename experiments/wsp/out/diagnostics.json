@@ -1,0 +1,456 @@
+{
+  "anchor": "check-mail",
+  "layer_logit_delta": [
+    {
+      "layer": 25,
+      "max_logit_delta": 1.8694515228271484,
+      "top1_changed": false
+    },
+    {
+      "layer": 22,
+      "max_logit_delta": 1.0908679962158203,
+      "top1_changed": false
+    },
+    {
+      "layer": 11,
+      "max_logit_delta": 0.7373371124267578,
+      "top1_changed": false
+    },
+    {
+      "layer": 27,
+      "max_logit_delta": 0.6238937377929688,
+      "top1_changed": false
+    },
+    {
+      "layer": 24,
+      "max_logit_delta": 0.6021900177001953,
+      "top1_changed": false
+    },
+    {
+      "layer": 0,
+      "max_logit_delta": 0.5811777114868164,
+      "top1_changed": false
+    },
+    {
+      "layer": 8,
+      "max_logit_delta": 0.5771790742874146,
+      "top1_changed": false
+    },
+    {
+      "layer": 26,
+      "max_logit_delta": 0.5565595626831055,
+      "top1_changed": false
+    },
+    {
+      "layer": 18,
+      "max_logit_delta": 0.5416162014007568,
+      "top1_changed": false
+    },
+    {
+      "layer": 19,
+      "max_logit_delta": 0.5149251222610474,
+      "top1_changed": false
+    },
+    {
+      "layer": 13,
+      "max_logit_delta": 0.45333218574523926,
+      "top1_changed": false
+    },
+    {
+      "layer": 16,
+      "max_logit_delta": 0.43769264221191406,
+      "top1_changed": false
+    },
+    {
+      "layer": 12,
+      "max_logit_delta": 0.3984065055847168,
+      "top1_changed": false
+    },
+    {
+      "layer": 17,
+      "max_logit_delta": 0.39272451400756836,
+      "top1_changed": false
+    },
+    {
+      "layer": 3,
+      "max_logit_delta": 0.38428306579589844,
+      "top1_changed": false
+    },
+    {
+      "layer": 1,
+      "max_logit_delta": 0.35976260900497437,
+      "top1_changed": false
+    },
+    {
+      "layer": 5,
+      "max_logit_delta": 0.32846593856811523,
+      "top1_changed": false
+    },
+    {
+      "layer": 4,
+      "max_logit_delta": 0.31430184841156006,
+      "top1_changed": false
+    },
+    {
+      "layer": 21,
+      "max_logit_delta": 0.3034381866455078,
+      "top1_changed": false
+    },
+    {
+      "layer": 2,
+      "max_logit_delta": 0.295135498046875,
+      "top1_changed": false
+    },
+    {
+      "layer": 14,
+      "max_logit_delta": 0.24132156372070312,
+      "top1_changed": false
+    },
+    {
+      "layer": 15,
+      "max_logit_delta": 0.23702049255371094,
+      "top1_changed": false
+    },
+    {
+      "layer": 6,
+      "max_logit_delta": 0.2043628692626953,
+      "top1_changed": false
+    },
+    {
+      "layer": 7,
+      "max_logit_delta": 0.17492592334747314,
+      "top1_changed": false
+    },
+    {
+      "layer": 10,
+      "max_logit_delta": 0.1676349639892578,
+      "top1_changed": false
+    },
+    {
+      "layer": 9,
+      "max_logit_delta": 0.1612708568572998,
+      "top1_changed": false
+    },
+    {
+      "layer": 20,
+      "max_logit_delta": 0.12358522415161133,
+      "top1_changed": false
+    },
+    {
+      "layer": 23,
+      "max_logit_delta": 0.08382987976074219,
+      "top1_changed": false
+    }
+  ],
+  "subset_sweep": [
+    {
+      "config": {
+        "label": "layer-27-alpha-2",
+        "layers": [
+          27
+        ],
+        "alpha": 2.0
+      },
+      "results": [
+        {
+          "case_id": "check-mail",
+          "raw": "{\"operation\": \"list_unread_messages\", \"needs_clarification\": true}",
+          "operation": "list_unread_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-pass",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "send-no-body",
+          "raw": "{\"operation\": \"send_reply\", \"needs_clarification\": false}",
+          "operation": "send_reply",
+          "needs_clarification": false,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-sam-thursday",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": true
+        },
+        {
+          "case_id": "search-invoice",
+          "raw": "{\"operation\": \"search_messages\", \"needs_clarification\": true}",
+          "operation": "search_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "config": {
+        "label": "layer-27-alpha-5",
+        "layers": [
+          27
+        ],
+        "alpha": 5.0
+      },
+      "results": [
+        {
+          "case_id": "check-mail",
+          "raw": "{\"operation\": \"list_unread_messages\", \"needs_clarification\": true}",
+          "operation": "list_unread_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-pass",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "send-no-body",
+          "raw": "{\"operation\": \"send_reply\", \"needs_clarification\": false}",
+          "operation": "send_reply",
+          "needs_clarification": false,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-sam-thursday",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": true
+        },
+        {
+          "case_id": "search-invoice",
+          "raw": "{\"operation\": \"search_messages\", \"needs_clarification\": true}",
+          "operation": "search_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "config": {
+        "label": "layer-27-alpha-10",
+        "layers": [
+          27
+        ],
+        "alpha": 10.0
+      },
+      "results": [
+        {
+          "case_id": "check-mail",
+          "raw": "{\"operation\": \"list_unread_messages\", \"needs_clarification\": true}operation: list_unread_messages, needs_clarification: true(operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation",
+          "operation": "list_unread_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-pass",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}operation: prepare_reply, needs_clarification: true(operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "send-no-body",
+          "raw": "{\"operation\": \"send_reply\", \"needs_clarification\": true}operation: \"send_reply\", needs_clarification: true(operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation",
+          "operation": "send_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": true
+        },
+        {
+          "case_id": "draft-sam-thursday",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}operation: prepare_reply, needs_clarification: true(operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation operation",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": true
+        },
+        {
+          "case_id": "search-invoice",
+          "raw": "{\"operation\": \"search_messages\", \"needs_clarification\": true}operation: \"search_messages\"operationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperationoperation",
+          "operation": "search_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "config": {
+        "label": "all-layers-alpha-1",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "alpha": 1.0
+      },
+      "results": [
+        {
+          "case_id": "check-mail",
+          "raw": "{\"operation\": \"list_unread_messages\", \"needs_clarification\": true}",
+          "operation": "list_unread_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-pass",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "send-no-body",
+          "raw": "{\"operation\": \"send_reply\", \"needs_clarification\": false}",
+          "operation": "send_reply",
+          "needs_clarification": false,
+          "json_valid": true,
+          "passed": false
+        },
+        {
+          "case_id": "draft-sam-thursday",
+          "raw": "{\"operation\": \"prepare_reply\", \"needs_clarification\": true}",
+          "operation": "prepare_reply",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": true
+        },
+        {
+          "case_id": "search-invoice",
+          "raw": "{\"operation\": \"search_messages\", \"needs_clarification\": true}",
+          "operation": "search_messages",
+          "needs_clarification": true,
+          "json_valid": true,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "config": {
+        "label": "all-layers-alpha-2",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "alpha": 2.0
+      },
+      "results": [
+        {
+          "case_id": "check-mail",
+          "raw": "{\"operation\": \"<enum>\", \"needs_clarification\": <true|false>}>  \n**needs_clarification**: true  \n**operation**: list_unread_messages",
+          "operation": null,
+          "needs_clarification": null,
+          "json_valid": false,
+          "passed": false
+        },
+        {
+          "case_id": "draft-pass",
+          "raw": "- {\"operation\": \"<enum>\", \"needs_clarification\": <true|false>}, {\"operation\": \"<enum>\"}  \n- {\"operation\": \"<enum>\"}  \n- {\"operation\": \"<enum>\"}  \n- {\"operation",
+          "operation": null,
+          "needs_clarification": null,
+          "json_valid": false,
+          "passed": false
+        },
+        {
+          "case_id": "send-no-body",
+          "raw": "{\"operation\": \"<enum>\", \"needs_clarification\": <true|false>}>  \n**needs-clarity**: true  \n**operation**: list_unread_messages",
+          "operation": null,
+          "needs_clarification": null,
+          "json_valid": false,
+          "passed": false
+        },
+        {
+          "case_id": "draft-sam-thursday",
+          "raw": "- {\"operation\": \"<enum>\", \"needs_clarification\": <true|false>}, {\"operation\": \"<enum>\"}  \n- {\"operation\": \"<enum>\"}  \n- {\"operation\": \"<enum>\"}  \n- {\"operation",
+          "operation": null,
+          "needs_clarification": null,
+          "json_valid": false,
+          "passed": false
+        },
+        {
+          "case_id": "search-invoice",
+          "raw": "{\"operation\": \"<enum>\", \"needs_clarification\": <true|false>}></user-instruction>  \n**operation**: <enum>list_unread_messages</enum>  \n**needs_clarification**: <true|false>",
+          "operation": null,
+          "needs_clarification": null,
+          "json_valid": false,
+          "passed": false
+        }
+      ]
+    }
+  ]
+}

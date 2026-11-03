@@ -29,13 +29,16 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
         (Operation::SummarizeThread, String::new())
     } else if starts_with_any(&lower, &["search", "find", "look for"]) {
         (Operation::SearchMessages, String::new())
-    } else if lower.contains("unread")
+    } else if contains_word(&lower, "unread")
         || lower.contains("anything important")
-        || lower.contains("check")
-        || lower.contains("inbox")
+        || contains_word(&lower, "check")
+        || contains_word(&lower, "inbox")
     {
         (Operation::ListUnreadMessages, String::new())
-    } else if lower.contains("recent") || lower.contains("latest") || lower.contains("new") {
+    } else if contains_word(&lower, "recent")
+        || contains_word(&lower, "latest")
+        || contains_word(&lower, "new")
+    {
         (Operation::ListRecentMessages, String::new())
     } else {
         return None;
@@ -53,6 +56,14 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
 
 fn starts_with_any(lower: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| lower.starts_with(prefix))
+}
+
+/// Whole-word match, so "newsletter" is not "new" and "checkout" is not
+/// "check".
+fn contains_word(lower: &str, word: &str) -> bool {
+    lower
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|token| token == word)
 }
 
 fn extract_target(text: &str) -> Target {
@@ -187,5 +198,11 @@ mod tests {
     #[test]
     fn unknown_instruction_needs_the_model() {
         assert!(plan_offline(ProviderId::Gmail, "Give me the gist of my day").is_none());
+    }
+
+    #[test]
+    fn whole_words_only_do_not_match_inside_other_words() {
+        assert!(plan_offline(ProviderId::Gmail, "Archive the newsletter.").is_none());
+        assert!(plan_offline(ProviderId::Gmail, "Checkout the branch.").is_none());
     }
 }

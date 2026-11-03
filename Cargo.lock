@@ -569,6 +569,7 @@ dependencies = [
  "herald-storage",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "uuid",
 ]

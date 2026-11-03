@@ -1,0 +1,38 @@
+{
+  "best": {
+    "layer": 15,
+    "accuracy": 0.5952380952380952,
+    "lambda": 0.01,
+    "tp": 10,
+    "tn": 15,
+    "fp": 17,
+    "fn": 0
+  },
+  "top_layers": [
+    {
+      "hidden_index": 15,
+      "accuracy": 0.5952380952380952,
+      "lambda": 0.01
+    },
+    {
+      "hidden_index": 10,
+      "accuracy": 0.5714285714285714,
+      "lambda": 0.01
+    },
+    {
+      "hidden_index": 9,
+      "accuracy": 0.5714285714285714,
+      "lambda": 0.01
+    },
+    {
+      "hidden_index": 14,
+      "accuracy": 0.5476190476190477,
+      "lambda": 0.01
+    },
+    {
+      "hidden_index": 8,
+      "accuracy": 0.5476190476190477,
+      "lambda": 0.01
+    }
+  ]
+}

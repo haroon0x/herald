@@ -1,0 +1,43 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 1,
+    "json_valid": 1,
+    "operation_correct": 1,
+    "non_clarify": 3,
+    "clarify_correct": 0,
+    "clarify": 0,
+    "injection_correct": 0,
+    "injection": 0,
+    "failed_ids": [
+      "check-mail",
+      "check-unread"
+    ]
+  },
+  "results": [
+    {
+      "case_id": "check-important",
+      "raw": "{\"operation\": \"list_unread_messages\", \"needs_clarification\": false}\n",
+      "operation": "list_unread_messages",
+      "needs_clarification": false,
+      "json_valid": true,
+      "passed": true
+    },
+    {
+      "case_id": "check-mail",
+      "raw": "{\"operation\": \"list_unread_messages\"}\n",
+      "operation": null,
+      "needs_clarification": null,
+      "json_valid": false,
+      "passed": false
+    },
+    {
+      "case_id": "check-unread",
+      "raw": "{\"operation\": \"list_unread_messages\"}\n",
+      "operation": null,
+      "needs_clarification": null,
+      "json_valid": false,
+      "passed": false
+    }
+  ]
+}

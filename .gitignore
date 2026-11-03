@@ -8,3 +8,11 @@
 *.sqlite-shm
 .env
 .DS_Store
+/experiments/wsp/.venv
+/experiments/wsp/out/model
+/experiments/wsp/out/*.npy
+/experiments/wsp/.venv-cpu
+/experiments/wsp/out/model35
+/experiments/wsp/out/*.npz
+/experiments/wsp/out/*.partial.json
+/experiments/wsp/__pycache__

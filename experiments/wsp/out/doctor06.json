@@ -1,0 +1,130 @@
+{
+  "model": "out/model",
+  "dtype": "fp32",
+  "core_correct": 5,
+  "core_total": 11,
+  "control_correct": 0,
+  "control_total": 4,
+  "results": [
+    {
+      "id": "ctl-arith",
+      "kind": "control",
+      "answer": "A",
+      "got": "B",
+      "ok": false,
+      "raw": "Answer: <B>"
+    },
+    {
+      "id": "ctl-sum",
+      "kind": "control",
+      "answer": "A",
+      "got": "B",
+      "ok": false,
+      "raw": "Answer: <B>"
+    },
+    {
+      "id": "ctl-order",
+      "kind": "control",
+      "answer": "A",
+      "got": "B",
+      "ok": false,
+      "raw": "Answer: <B> verifying it"
+    },
+    {
+      "id": "ctl-big",
+      "kind": "control",
+      "answer": "A",
+      "got": "C",
+      "ok": false,
+      "raw": "Answer: <C> equal"
+    },
+    {
+      "id": "core-linalg",
+      "kind": "core",
+      "answer": "B",
+      "got": "C",
+      "ok": false,
+      "raw": "Answer: C) it is unchanged"
+    },
+    {
+      "id": "core-read",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: <B> no, separation is correlational until an intervention moves behaviour"
+    },
+    {
+      "id": "core-decode",
+      "kind": "core",
+      "answer": "B",
+      "got": "D",
+      "ok": false,
+      "raw": "Answer: <D>"
+    },
+    {
+      "id": "core-site",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: <B>"
+    },
+    {
+      "id": "core-alpha",
+      "kind": "core",
+      "answer": "A",
+      "got": "D",
+      "ok": false,
+      "raw": "Answer: <D>"
+    },
+    {
+      "id": "core-obstacle",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: <B> no, it removed an obstacle that was hiding an ability already present"
+    },
+    {
+      "id": "core-missing",
+      "kind": "core",
+      "answer": "B",
+      "got": "A",
+      "ok": false,
+      "raw": "Answer: <A>"
+    },
+    {
+      "id": "core-grammar",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: <B> format/decoding failure"
+    },
+    {
+      "id": "core-scope",
+      "kind": "core",
+      "answer": "A",
+      "got": "D",
+      "ok": false,
+      "raw": "Answer: <D>"
+    },
+    {
+      "id": "core-verify",
+      "kind": "core",
+      "answer": "B",
+      "got": "C",
+      "ok": false,
+      "raw": "Answer: <C>"
+    },
+    {
+      "id": "core-role",
+      "kind": "core",
+      "answer": "B",
+      "got": "B",
+      "ok": true,
+      "raw": "Answer: <B> a separate frontier model acts as the programmer"
+    }
+  ]
+}

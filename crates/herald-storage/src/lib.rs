@@ -1,4 +1,4 @@
-//! SQLite state and audit log.
+//! `SQLite` state and audit log.
 //!
 //! The store is the source of truth for which messages have been seen and what
 //! happened to every write action. The model never owns this state.

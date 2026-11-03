@@ -46,8 +46,9 @@ Result verification -> ExecutionReceipt
   preferences. It refuses illegal transitions; callers cannot corrupt state.
 - **herald-runtime** — model manifest and checksums, loopback-only
   `llama-server` management, JSON chat completion. No knowledge of actions.
-- **apps/agent** — CLI. Translates instructions into plans, applies policy, and
-  records actions. Cannot mutate an account yet.
+- **apps/agent** — CLI. Translates instructions into plans, applies policy,
+  records actions, and runs the local execution loop for allowed reads and
+  drafts. Cannot mutate an account yet.
 
 ## Trust boundaries
 
@@ -65,6 +66,31 @@ Result verification -> ExecutionReceipt
 4. **Optimistic retries vs. reality.** A `Timeout` after a send goes to
    `Uncertain`; only a re-read of the thread moves it forward. The idempotency
    content hash is the SHA-256 of the exact body.
+
+## Execution loop (Phase 1)
+
+```text
+Allowed action
+   |
+   v
+planned -> executing
+   |            |
+   |            +-- read: resolve target -> adapter -> record messages (deduped)
+   |            |        -> succeeded | failed
+   |            +-- draft: prepare locally (no provider call) -> succeeded
+   |
+   +-- no adapter (gmail/x): audit `deferred`, action stays planned
+```
+
+- Target resolution is deterministic and fails closed: a `LatestFrom` target
+  only matches an existing sender, a `Description` becomes a trimmed search,
+  and a `Thread` id is verified by the adapter. No LLM is involved here.
+- Message persistence dedupes on `(provider, message_id)`, so repeated scans
+  report zero new items.
+- A provider error transitions the record to `failed` and appends an audit
+  event; it never reports success and never retries blindly.
+- `execute` refuses `Action::Send` outright. Sends only move to
+  `awaiting_approval` and wait for the Phase 3 approval consumer.
 
 ## Inference runtime
 

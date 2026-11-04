@@ -35,6 +35,15 @@ pub struct Out {
     color: bool,
 }
 
+/// Write one line, ignoring a closed pipe.
+///
+/// `herald ... | head` must exit quietly, not panic on `EPIPE`.
+fn emit(line: &str) {
+    use std::io::Write as _;
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{line}");
+}
+
 impl Out {
     #[must_use]
     pub fn new() -> Self {
@@ -47,26 +56,26 @@ impl Out {
     /// Print a human line (no-op in JSON mode).
     pub fn line(self, text: impl AsRef<str>) {
         if !self.json {
-            println!("{}", text.as_ref());
+            emit(text.as_ref());
         }
     }
 
     pub fn blank(self) {
         if !self.json {
-            println!();
+            emit("");
         }
     }
 
     /// Print an aligned human field, e.g. `decision:  awaiting approval`.
     pub fn field(self, label: &str, value: impl std::fmt::Display) {
         if !self.json {
-            println!("{:<11} {value}", format!("{label}:"));
+            emit(&format!("{:<11} {value}", format!("{label}:")));
         }
     }
 
     pub fn heading(self, text: impl AsRef<str>) {
         if !self.json {
-            println!("{}", self.bold(text.as_ref()));
+            emit(&self.bold(text.as_ref()));
         }
     }
 
@@ -80,13 +89,13 @@ impl Out {
     #[allow(clippy::needless_pass_by_value)]
     pub fn data(self, command: &str, data: Value) {
         if self.json {
-            println!(
-                "{}",
-                json!({
+            emit(
+                &json!({
                     "ok": true,
                     "command": command,
                     "data": data,
                 })
+                .to_string(),
             );
         }
     }

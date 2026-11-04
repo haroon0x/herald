@@ -11,6 +11,7 @@
 pub mod download;
 pub mod inference;
 pub mod manifest;
+pub mod opencode;
 pub mod sidecar;
 
 use std::path::PathBuf;
@@ -48,6 +49,7 @@ pub enum RuntimeError {
 pub use download::{DownloadStats, download_model, download_url};
 pub use inference::{Inference, OpenAiClient};
 pub use manifest::ModelManifest;
+pub use opencode::OpenCodeInference;
 pub use sidecar::{
     ChatMessage, LlamaSidecar, SidecarConfig, binary_from_env, free_loopback_port, model_path,
 };

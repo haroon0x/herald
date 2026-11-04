@@ -17,5 +17,8 @@ thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true

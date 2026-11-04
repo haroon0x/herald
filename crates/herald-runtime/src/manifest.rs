@@ -1,3 +1,6 @@
+//! The pinned model manifest: name, repo, revision, quantization, and the SHA-256
+//! every downloaded file is verified against.
+
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;

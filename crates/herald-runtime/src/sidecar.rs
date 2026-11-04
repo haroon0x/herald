@@ -1,3 +1,6 @@
+//! The managed `llama-server` sidecar: loopback-only, per-run API token, random
+//! port, startup deadline, clean shutdown on drop.
+
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;

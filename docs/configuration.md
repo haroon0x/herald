@@ -178,7 +178,7 @@ profile. See [providers.md](providers.md#x-browser-adapter) and
 | `action_delay_ms` | integer | `1800` | `2500` | Pause after opening a page, clicking, or submitting. |
 | `typing_delay_ms` | integer | `20` | `35` | Per-character delay while typing into a composer. |
 | `close_after` | boolean | `true` | `false` | Close the browser at the end of each operation. |
-| `read_only` | boolean | `false` | `true` | Refuse every X write; reads keep working. The strongest local switch while you judge the account risk. |
+| `read_only` | boolean | `false` | `true` | Refuse every X write, including approved ones; reads keep working. Default is `false`: writes are allowed but still need approval (and autopost is separately off). |
 
 ### `[model]`
 

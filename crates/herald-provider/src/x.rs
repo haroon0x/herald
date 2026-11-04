@@ -842,23 +842,79 @@ pub fn detect_chrome() -> Option<PathBuf> {
 /// can see and complete the challenge. Returns when the home timeline shows an
 /// authenticated composer, or `Timeout` if the window is not ready in time.
 pub async fn login(config: &XConfig, timeout: Duration) -> Result<(), ProviderError> {
-    let mut client = ChromeClient::launch(config, false).await?;
-    client.open(LOGIN_URL).await?;
-    let started = std::time::Instant::now();
-    loop {
-        if started.elapsed() >= timeout {
-            client.close().await?;
-            return Err(ProviderError::Timeout);
-        }
-        let html = client.html().await?;
-        if let Ok(state) = parse_compose_state(&html)
-            && state.authenticated
-        {
-            client.close().await?;
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    ensure_dedicated_profile(&config.profile_dir)?;
+    std::fs::create_dir_all(&config.profile_dir).map_err(|error| {
+        ProviderError::NotConfigured(format!(
+            "creating the X profile {}: {error}",
+            config.profile_dir.display()
+        ))
+    })?;
+
+    let executable = match &config.browser_executable {
+        Some(path) => path.clone(),
+        None => detect_chrome().ok_or_else(|| {
+            ProviderError::NotConfigured(
+                "Chrome or Chromium was not found; install it or set CHROME".into(),
+            )
+        })?,
+    };
+
+    // Deliberately a plain browser window: no CDP, no --enable-automation, no
+    // remote-debugging port. Google's OAuth flow refuses a CDP-controlled
+    // browser ("This browser or app may not be secure"), and that is a stop
+    // condition, not something to work around.
+    let mut child = tokio::process::Command::new(&executable)
+        .arg(format!("--user-data-dir={}", config.profile_dir.display()))
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg(LOGIN_URL)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| {
+            ProviderError::NotConfigured(format!("could not open Chrome for X sign-in: {error}"))
+        })?;
+
+    let closed = tokio::time::timeout(timeout, child.wait()).await;
+    if closed.is_err() {
+        let _ = child.kill().await;
     }
+    // Chrome flushes the profile on exit; a short pause avoids racing the
+    // profile lock when verification launches.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    verify_signed_in(config).await
+}
+
+/// Confirm the profile's session by asking the signed-in home timeline.
+async fn verify_signed_in(config: &XConfig) -> Result<(), ProviderError> {
+    let mut last_error = None;
+    for attempt in 0..3 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        match ChromeClient::launch(config, true).await {
+            Ok(mut client) => {
+                let result = async {
+                    client.open(HOME_URL).await?;
+                    let state = parse_compose_state(&client.html().await?)?;
+                    if state.authenticated {
+                        Ok(())
+                    } else {
+                        Err(ProviderError::NotAuthenticated)
+                    }
+                }
+                .await;
+                let _ = client.close().await;
+                return result;
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error
+        .unwrap_or_else(|| ProviderError::NotConfigured("could not verify the X session".into())))
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,10 +1414,20 @@ struct ChromeClient {
 impl ChromeClient {
     async fn launch(config: &XConfig, headless: bool) -> Result<Self, ProviderError> {
         ensure_dedicated_profile(&config.profile_dir)?;
+        // Minimal flag set: chromiumoxide's defaults include
+        // `--enable-automation`, which adds the "controlled by automated
+        // software" infobar and sets navigator.webdriver. Herald does not claim
+        // to hide what it is; it simply does not pass an automation banner it
+        // does not need. CDP itself remains visible to the page.
         let mut builder = chromiumoxide::browser::BrowserConfig::builder()
+            .disable_default_args()
             .user_data_dir(&config.profile_dir)
             .arg("--no-first-run")
-            .arg("--no-default-browser-check");
+            .arg("--no-default-browser-check")
+            .arg("--disable-dev-shm-usage")
+            .arg("--disable-gpu")
+            .arg("--disable-extensions")
+            .arg("--disable-sync");
         if let Some(executable) = &config.browser_executable {
             builder = builder.chrome_executable(executable);
         }

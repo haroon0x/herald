@@ -41,12 +41,16 @@ pub async fn login(app: &App) -> Result<u8, AppError> {
     })?;
 
     app.out
-        .line("Opening a visible Chrome window on the dedicated X profile.");
+        .line("Opening a plain Chrome window on the dedicated X profile.");
     app.out.field("profile", profile_dir.display());
+    app.out.line(
+        "No automation flags and no remote debugging, so Google's sign-in check          treats it as a normal browser.",
+    );
+    app.out.line(
+        "Sign in yourself (Google, password, 2FA as usual). Herald never sees the          credentials.",
+    );
     app.out
-        .line("Sign in yourself. Herald does not read cookies or type credentials.");
-    app.out
-        .line("The window closes when a signed-in home timeline is detected.");
+        .line("Close the Chrome window when you are done; Herald then verifies the session.");
 
     let config = XConfig {
         profile_dir: profile_dir.clone(),
@@ -76,7 +80,11 @@ pub async fn login(app: &App) -> Result<u8, AppError> {
         }
         Err(ProviderError::Timeout) => Err(AppError::new(
             "timeout",
-            "no signed-in home timeline appeared within 10 minutes; nothing was stored",
+            "the sign-in window stayed open for 10 minutes; close it and run `herald x login` again",
+        )),
+        Err(ProviderError::NotAuthenticated) => Err(AppError::new(
+            "not_authenticated",
+            "the profile is not signed in yet; run `herald x login` and finish signing in",
         )),
         Err(error) => Err(AppError::new("x_login", error.to_string())),
     }

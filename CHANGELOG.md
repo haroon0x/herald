@@ -38,6 +38,9 @@ not as released behaviour until the canary in the milestone handoff passes.
   `profile_dir` that looks like a shared browser profile is refused before
   launch, and `x.read_only` blocks every write. These are local precautions,
   not evasion.
+- `herald x login` opens ordinary Chrome on the dedicated profile instead of a
+  CDP session, because Google's OAuth refuses automation-controlled browsers.
+  Herald's own browser no longer passes `--enable-automation`.
 - `ProviderId::X` is now implemented. `herald providers` performs a real
   browser health check for `x` when `[x]` is configured.
 - Eval set grows from 42 to 45 cases; the rules engine scores 45/45.

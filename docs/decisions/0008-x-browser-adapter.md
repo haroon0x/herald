@@ -27,10 +27,14 @@ protocol adapter".
 `CommunicationProvider` trait over `chromiumoxide` 0.9 (Chrome DevTools
 Protocol) against a **dedicated profile** at `<data-dir>/profiles/x`.
 
-1. **A human signs in once.** `herald x login` opens a visible window on
-   `x.com/login` and waits. Herald never reads cookies, never extracts
-   credentials, never types a password, and never completes a challenge. It
-   also never points at an everyday Chrome profile.
+1. **A human signs in once, in a plain browser.** `herald x login` opens the
+   dedicated profile in ordinary Chrome — no CDP, no `--enable-automation`, no
+   remote-debugging port — and waits for the window to close. This is not
+   politeness: Google's OAuth flow refuses a CDP-controlled browser with
+   "This browser or app may not be secure", and bypassing that with stealth
+   patches is evasion. Herald never reads cookies, never extracts credentials,
+   never types a password, and never completes a challenge. It also never
+   points at an everyday Chrome profile.
 2. **The capability surface is unchanged.** Only the seven trait methods
    exist. Selectors and URLs are module constants; the planner cannot name a
    selector, a URL, a script, or a "click anything" operation. Thread ids are
@@ -89,6 +93,9 @@ impressions, likes, or reach.
   This is a single-user local client, not a hosted service; that distinction is
   what the owner accepted.
 - **No metrics.** The goal is narrower than "everything x.com does".
+- **Sign-in is manual and therefore not automatable.** A user who only has
+  Google SSO must complete Google's check in the plain window; Herald cannot
+  and should not do it for them.
 
 ## Consequences
 

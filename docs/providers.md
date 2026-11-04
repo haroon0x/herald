@@ -285,12 +285,25 @@ handle = "@you"          # required for verified writes
 headless = true          # must be true for normal commands
 close_after = true
 
-herald x login           # opens a visible window; you sign in yourself
+herald x login           # opens a plain Chrome window; you sign in yourself
 herald providers         # x should report ready
 ```
 
-`herald x login` is the only command that shows a window. Herald never reads
-cookies, never types credentials, and never completes a challenge. The profile
+`herald x login` opens a **plain Chrome window on the dedicated profile**: no
+CDP, no `--enable-automation`, no remote-debugging port. That is deliberate.
+Google's OAuth flow refuses a browser it can tell is automation-controlled
+("This browser or app may not be secure"), and working around that check is
+evasion. Signing in from a normal window, then reusing the profile for Herald's
+own operations, needs no trick and keeps the credential entry entirely human.
+Close the window when done; Herald verifies the session afterwards.
+
+Herald's own browser is launched with a minimal flag set, so it no longer passes
+`--enable-automation` (the "controlled by automated software" infobar and the
+`navigator.webdriver` marker). It does not spoof fingerprints or hide CDP:
+those are evasion, not safety.
+
+Herald never reads cookies, never types credentials, and never completes a
+challenge. The profile
 lives at `<data-dir>/profiles/x` unless `profile_dir` says otherwise; it must
 never point at an everyday Chrome profile. Herald refuses a path that looks
 like a shared browser profile (`google-chrome`, `chromium`, `microsoft-edge`,

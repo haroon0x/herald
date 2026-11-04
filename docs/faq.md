@@ -220,6 +220,17 @@ herald reconcile "$id"                                  # found in Sent, now suc
 action becomes `uncertain`, and `reconcile` decides from provider state instead
 of retrying the send. This hook only applies to the `fake` provider.
 
+## X sign-in says "This browser or app may not be secure". Why?
+
+That wording is Google's secure-browser check, not an X error. It fires when
+X's Google sign-in is attempted from a browser driven over CDP (Playwright,
+Puppeteer, `chromiumoxide`, and Herald before this change). Herald now opens a
+plain Chrome window with no automation flags for `herald x login`; sign in
+there, close the window, and Herald verifies the session and reuses the
+profile. Signing in with an X username/password instead of Google also avoids
+that check. Do not use stealth plugins to bypass it: they are an arms race,
+violate the provider's terms, and run untrusted code near your session.
+
 ## Does Herald use a browser? Can I use Playwright?
 
 Only for X. Mail is still a Maildir on disk plus SMTP. The X adapter drives a

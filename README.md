@@ -22,7 +22,7 @@
 
 **The trust boundary is the product.** A communication agent with your account is a program that can speak as you. Herald keeps that authority in Rust: the model emits a typed `ActionPlan` and never touches a provider. Validation, target resolution, policy, and execution are separate, testable steps.
 
-**Inference is local.** Planning uses a rules router first and a grammar-constrained classifier only when the rules miss. The classifier picks one of seven operations and a clarification flag. A 0.8B model is enough because it is never asked to hold intent, schema, and wording in one request.
+**Inference is local.** Planning uses a rules router first and a grammar-constrained classifier only when the rules miss. The classifier picks one of seven operations, a clarification flag, a target phrase, and the question it would ask. A 0.8B model is enough because it is never asked to hold intent, schema, and wording in one request.
 
 **Approval comes before every send.** `allow_send` defaults to `false`. When it is enabled, each send still writes a pending approval with the body and hash. `approve` re-resolves the thread immediately before sending, refuses if the target changed, and verifies the result. The one exception is the scoped autopost lane for original X posts ([ADR 0009](docs/decisions/0009-scoped-autopost.md)): replies and DMs never use it, and every rail must pass or the post queues like anything else.
 

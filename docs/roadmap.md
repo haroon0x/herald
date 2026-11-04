@@ -205,22 +205,34 @@ proposes, Rust disposes, the user approves.
 
 ### Next: 2/10
 
-Recorded 2026-11-04, not started. The change is small and measurable.
+Recorded 2026-11-04. Schema, prompt, parsing, and tests are in place; the
+measurement is not started. The change is small and measurable.
 
-`classifier_schema()` grows from two fields to four: `target` (a human phrase,
-never an id) and `clarification_question` (empty when not asking).
+`classifier_schema()` grew from two fields to four: `target` (a human phrase,
+never an id) and `question` (empty when not asking).
 `Target::Description` already models a phrase, `validate_target` already gates
 it, and an empty target falls back to `rules::target_hint`, so the model can
-improve the target but cannot break the pipeline by omitting it.
+improve the target but cannot break the pipeline by omitting it. The same holds
+for an empty question: `validate_plan` supplies its default.
+
+The JSON field is `question`, not `clarification_question`, because object keys
+serialise sorted and llama-server's grammar follows that order. A name starting
+with `c` would be generated *before* `needs_clarification`, forcing the model to
+commit to a question string before it decides whether to ask one. `question`
+sorts after `operation`, so the measured flag-then-operation sequence is
+untouched and the two phrases are appended after it.
 
 Steps:
 
-1. Schema and prompt in `crates/herald-core/src/intent.rs`.
-2. Parse and fall back in `apps/agent/src/planner.rs::plan`.
-3. Tests: four fields present, the prompt asks for them, an empty target falls
-   back, a model-authored question reaches `PlanError::ClarificationRequired`.
+1. [x] Schema and prompt in `crates/herald-core/src/intent.rs`.
+2. [x] Parse and fall back in `apps/agent/src/planner.rs::plan`.
+3. [x] Tests: four fields present, the prompt asks for them, an empty target falls
+   back, a model-authored question reaches `PlanError::ClarificationRequired`,
+   and a question on a false flag is discarded.
 4. [x] `target_contains` cases in `eval/commands.json`. The harness reports the
-   field for five sampled cases; a wider human review is still pending.
+   field for five sampled cases; a wider human review is still pending. The
+   harness now builds its plan through `planner::plan_from_classification`, so
+   the phrase it scores is the model's, not the regex's.
 5. Measure: no regression against the 42-case baseline, 20 targets read by a human,
    and a count of cases where the model's target beats the regex.
 6. Go/no-go for 3/10.

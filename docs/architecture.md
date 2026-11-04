@@ -361,11 +361,14 @@ at once:
 | Tier | Task | Who does it | Output |
 | --- | --- | --- | --- |
 | 0 | Common commands | Rules router | `ActionPlan` |
-| 1 | Intent classification | Local model, grammar-constrained | One of seven operations plus a clarification flag |
+| 1 | Intent classification | Local model, grammar-constrained | One of seven operations, a clarification flag, and the two phrases the model may name |
 | 2 | Target resolution | Rust, against provider data | `ThreadId` |
 | 3 | Drafting and summarization | Local model, plain text | Reply body or thread summary |
 
-Tier 1 asks one question with two fields. Tier 3 is plain text with no JSON,
+Tier 1 asks one question with four fields: the flag, the operation, and the
+target phrase and question the model may name better than the regex does. The
+two phrases are only hints; an empty one falls back to `rules::target_hint` and
+validation still gates everything. Tier 3 is plain text with no JSON,
 and every message in a summary prompt is wrapped as untrusted. Tier 2 never
 involves the model. This split is why a 0.8B model is usable: it is a
 classifier and a writer, not an agent.

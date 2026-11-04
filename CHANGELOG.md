@@ -30,6 +30,12 @@ not as released behaviour until the canary in the milestone handoff passes.
   never `--auto`) with a `doctor` version probe.
 - **`create_post` operation** with timeline target, deterministic post phrases,
   policy rails, and three eval cases (45 total).
+- **Target and question in the classifier** (model ladder 2/10): the grammar now
+  carries `target` and `question` alongside the flag and operation, so the model
+  can phrase what a request is about without ever naming an identifier. An empty
+  target falls back to the deterministic hint, a question reaches the user only
+  when the clarification flag is set, and resolution, validation, and approval
+  are unchanged.
 
 ### Changed
 

@@ -237,6 +237,24 @@ Steps:
    and a count of cases where the model's target beats the regex.
 6. Go/no-go for 3/10.
 
+Measurement attempted 2026-11-04; it does not satisfy the gate. The pinned
+Qwen3.5-0.8B is not installed on the measuring machine (`llama-server` is
+absent and the models directory holds only the manifest), and the `opencode`
+free pool answered "Free usage limit reached" for every free model id. The only
+reachable backend was a local `qwen2.5:0.5b` through Ollama. That is a
+different and smaller model, so the run is a parser and grammar data point, not
+a 2/10 result.
+
+On it, all 45 answers parsed with all four fields present and no retries, and 4
+of the 5 `target_contains` cases were satisfied by the model's phrase where the
+regex had nothing ("the latest email from the founder", "latest message from
+Sam"). The score was still 11/45 because the flag collapses to `true`: 32 of
+the 34 non-clarification cases were deferred. Two targets also came back as the
+`/no_think` marker echoed verbatim.
+
+The gate stays open. It needs the pinned 0.8B, and the 20-target human review
+is still pending.
+
 Gate before 3/10, all four:
 
 - No regression on the 42-case classifier score.

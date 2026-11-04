@@ -61,6 +61,16 @@ reads likes, reposts, follows, and system notices. The DM
   browser health check for `x` when `[x]` is configured.
 - Eval set grows from 42 to 45 cases; the rules engine scores 45/45.
 
+### Fixed
+
+- The managed `llama-server` sidecar now runs with `--jinja` and asks the chat
+  template not to think. Without it the pinned reasoning model spent the whole
+  token budget in its reasoning block and returned empty content, so the
+  grammar never constrained the answer. Classifier calls on the pinned model go
+  from tens of seconds and a parse failure to a schema-valid object in a few.
+- A `llama-server` that exits early or misses the startup deadline now reports
+  its last stderr lines instead of a bare "did not become ready in time".
+
 ### Not included
 
 - Post metrics, scheduling, threads, likes, follows, and delete. Metrics in

@@ -346,8 +346,15 @@ Herald has two inference backends behind one `Inference` trait
 child process. The host is hardcoded to `127.0.0.1`; there is no bind-address
 field to misconfigure. Each run gets a random API token, a free port, a 90
 second startup deadline, and a clean shutdown on drop. Generation is
-temperature 0. For JSON calls, the server is grammar-constrained with a JSON
-schema, so the model cannot invent keys or enum values.
+temperature 0. The child runs with `--jinja`, so the model's own chat template
+is applied: a reasoning model is told not to think per request, otherwise it
+spends the token budget inside the reasoning block and answers with none.
+For JSON calls, the server is grammar-constrained with a JSON schema, so the
+model cannot invent keys or enum values.
+
+The child's stderr goes to a per-run file in the temp directory; a failed start
+or an early exit reports its last few kilobytes instead of a bare timeout, and
+the file is removed on shutdown.
 
 **OpenAI-compatible endpoint.** `[model] backend = "openai"` points at any
 server that speaks `/v1/chat/completions`, which covers Ollama, LM Studio, and

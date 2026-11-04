@@ -38,8 +38,8 @@ pub enum RuntimeError {
     DownloadFailed { status: u16, url: String },
     #[error("the server does not support resumable downloads (range unsupported): {url}")]
     RangeUnsupported { url: String },
-    #[error("the inference server did not become ready in time")]
-    StartupTimeout,
+    #[error("the inference server did not become ready in time: {0}")]
+    StartupTimeout(String),
     #[error("the inference server returned an invalid response: {0}")]
     BadResponse(String),
     #[error("the model process failed: {0}")]

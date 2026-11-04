@@ -1,6 +1,7 @@
 //! The managed `llama-server` sidecar: loopback-only, per-run API token, random
 //! port, startup deadline, clean shutdown on drop.
 
+use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -67,6 +68,11 @@ impl SidecarConfig {
             self.context_size.to_string(),
             "--threads".into(),
             self.threads.to_string(),
+            // `--jinja` makes the server apply the model's own chat template.
+            // Without it a reasoning model never sees the template's thinking
+            // switch, spends the whole token budget inside the reasoning block,
+            // and returns an empty `content` with `finish_reason: "length"`.
+            "--jinja".into(),
             "--api-key".into(),
             self.api_key.clone(),
         ]
@@ -118,6 +124,8 @@ pub struct LlamaSidecar {
     endpoint: String,
     api_key: String,
     client: reqwest::Client,
+    /// Where the child's stderr is redirected for diagnostics.
+    stderr_path: PathBuf,
 }
 
 impl std::fmt::Debug for LlamaSidecar {
@@ -146,13 +154,20 @@ impl LlamaSidecar {
             free_loopback_port()?
         } else {
             config.port
-        };
+        }; // A failed start used to be silent (`Stdio::null()`), which made a
+        // missing chat template or a corrupt GGUF look like a timeout. The
+        // child's stderr goes to a per-run file in the temp directory and only a
+        // bounded tail is ever read back; the file is removed on shutdown.
+        let stderr_path = std::env::temp_dir().join(format!(
+            "herald-llama-{}.log",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let stderr_file = std::fs::File::create(&stderr_path)?;
 
         let child = Command::new(&config.binary)
             .args(config.arguments(port))
-            // Keep the child quiet; a real logging sink lands in Phase 1.
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(stderr_file))
             .spawn()?;
 
         let endpoint = format!("http://127.0.0.1:{port}");
@@ -165,6 +180,7 @@ impl LlamaSidecar {
             endpoint,
             api_key: config.api_key.clone(),
             client,
+            stderr_path,
         };
 
         let deadline = Instant::now() + Duration::from_secs(90);
@@ -173,12 +189,15 @@ impl LlamaSidecar {
                 return Ok(sidecar);
             }
             if Instant::now() >= deadline {
+                let detail = sidecar.stderr_detail();
                 sidecar.shutdown();
-                return Err(RuntimeError::StartupTimeout);
+                return Err(RuntimeError::StartupTimeout(detail));
             }
             if let Ok(Some(status)) = sidecar.child.try_wait() {
+                let detail = sidecar.stderr_detail();
+                sidecar.shutdown();
                 return Err(RuntimeError::InvalidConfig(format!(
-                    "inference server exited early with {status}"
+                    "inference server exited early with {status}: {detail}"
                 )));
             }
             sleep(Duration::from_millis(250)).await;
@@ -188,6 +207,34 @@ impl LlamaSidecar {
     #[must_use]
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    /// The last few kilobytes the child wrote to stderr, or an empty string.
+    ///
+    /// Only used to explain a failed start; never part of a prompt.
+    #[must_use]
+    pub fn stderr_tail(&self) -> String {
+        const TAIL_BYTES: u64 = 4_096;
+        let Ok(mut file) = std::fs::File::open(&self.stderr_path) else {
+            return String::new();
+        };
+        let length = file.metadata().map_or(0, |meta| meta.len());
+        if length > TAIL_BYTES {
+            file.seek(SeekFrom::Start(length - TAIL_BYTES)).ok();
+        }
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).ok();
+        String::from_utf8_lossy(&buffer).trim().to_string()
+    }
+
+    /// `stderr_tail` phrased for an error message.
+    fn stderr_detail(&self) -> String {
+        let tail = self.stderr_tail();
+        if tail.is_empty() {
+            "no output on stderr".to_string()
+        } else {
+            format!("stderr: {tail}")
+        }
     }
 
     pub async fn health(&self) -> bool {
@@ -232,6 +279,10 @@ impl LlamaSidecar {
             ],
             "max_tokens": max_tokens,
             "temperature": 0.0,
+            // A reasoning model spends its whole budget inside the thinking
+            // block otherwise, so the answer never arrives. This is a template
+            // variable, applied because the sidecar runs with `--jinja`.
+            "chat_template_kwargs": {"enable_thinking": false},
             "response_format": response_format,
             "stream": false,
         });
@@ -256,6 +307,7 @@ impl LlamaSidecar {
             ],
             "max_tokens": max_tokens,
             "temperature": 0.0,
+            "chat_template_kwargs": {"enable_thinking": false},
             "stream": false,
         });
 
@@ -287,10 +339,11 @@ impl LlamaSidecar {
             .ok_or_else(|| RuntimeError::BadResponse("missing assistant content".into()))
     }
 
-    /// Terminate the child and reap it.
+    /// Terminate the child, reap it, and drop its stderr file.
     pub fn shutdown(&mut self) {
         self.child.kill().ok();
         self.child.wait().ok();
+        std::fs::remove_file(&self.stderr_path).ok();
     }
 }
 
@@ -326,6 +379,36 @@ mod tests {
                 .any(|pair| pair == ["--host", "127.0.0.1"])
         );
         assert!(!arguments.iter().any(|argument| argument == "0.0.0.0"));
+    }
+
+    #[test]
+    fn arguments_apply_the_chat_template() {
+        // Without `--jinja` the template's thinking switch is ignored, and a
+        // reasoning model answers with empty content after the token budget.
+        let config = SidecarConfig::new("/bin/llama-server", "/models/qwen.gguf");
+        assert!(config.arguments(1234).iter().any(|arg| arg == "--jinja"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn early_exit_reports_the_child_stderr() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("failing-server");
+        std::fs::write(
+            &binary,
+            "#!/usr/bin/env bash\necho 'failed to load model: bad magic' >&2\nexit 3\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let model = dir.path().join("model.gguf");
+        std::fs::write(&model, b"not a gguf").unwrap();
+
+        let config = SidecarConfig::new(&binary, &model);
+        let error = LlamaSidecar::start(&config).await.unwrap_err().to_string();
+        assert!(error.contains("exited early"), "{error}");
+        assert!(error.contains("bad magic"), "{error}");
     }
 
     #[test]

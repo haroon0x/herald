@@ -38,6 +38,8 @@ async fn main() -> ExitCode {
 /// Third-party crates whose debug logs can contain page text, headers, or
 /// cookies. Herald's own targets keep whatever level the user asked for.
 const LOG_CAPS: [&str; 11] = [
+    // Its warnings are parse noise for CDP events Chrome added after the
+    // crate's schema; only hard errors are useful.
     "chromiumoxide",
     "html5ever",
     "markup5ever",
@@ -55,7 +57,12 @@ fn log_filter(filter: &str) -> String {
     use std::fmt::Write as _;
     let mut filter = filter.to_string();
     for target in LOG_CAPS {
-        let _ = write!(filter, ",{target}=warn");
+        let level = if target == "chromiumoxide" {
+            "error"
+        } else {
+            "warn"
+        };
+        let _ = write!(filter, ",{target}={level}");
     }
     filter
 }
@@ -86,7 +93,12 @@ mod tests {
     fn tracing_caps_chromiumoxide_below_debug() {
         let filter = log_filter("debug");
         for target in LOG_CAPS {
-            assert!(filter.contains(&format!("{target}=warn")), "{target}");
+            let level = if target == "chromiumoxide" {
+                "error"
+            } else {
+                "warn"
+            };
+            assert!(filter.contains(&format!("{target}={level}")), "{target}");
         }
         assert!(tracing_subscriber::EnvFilter::try_new(filter).is_ok());
     }

@@ -45,6 +45,10 @@ not as released behaviour until the canary in the milestone handoff passes.
 - `herald x login` opens ordinary Chrome on the dedicated profile instead of a
   CDP session, because Google's OAuth refuses automation-controlled browsers.
   Herald's own browser no longer passes `--enable-automation`.
+- Live X reads verified against a signed-in profile: mentions and status
+  threads parse real posts and replies with stable ids and timestamps. The DM
+  conversation list is still unverified and reports nothing rather than
+  guessing. Home feed, richer notifications, and a GUI are on the roadmap.
 - `ProviderId::X` is now implemented. `herald providers` performs a real
   browser health check for `x` when `[x]` is configured.
 - Eval set grows from 42 to 45 cases; the rules engine scores 45/45.

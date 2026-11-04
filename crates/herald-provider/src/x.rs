@@ -45,7 +45,7 @@ use crate::{
 };
 
 /// How long a page is given to render a selector before the operation fails.
-const PAGE_TIMEOUT: Duration = Duration::from_secs(15);
+const PAGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// X home timeline. The authenticated landing page.
 pub const HOME_URL: &str = "https://x.com/home";
@@ -448,13 +448,16 @@ impl XProvider {
         let client = self.ensure_client(slot).await?;
         client.open(MENTIONS_URL).await?;
         let mentions_html = client.html().await?;
+        tracing::debug!(bytes = mentions_html.len(), "parsing X mentions");
         let mut items = parse_mentions(&mentions_html)?;
 
         client.open(MESSAGES_URL).await?;
         let dms_html = client.html().await?;
         // A failure on the DM page is a real failure: a challenge or a layout
         // change must not be hidden behind a successful mentions read.
-        items.extend(parse_dm_list(&dms_html)?);
+        let dms = parse_dm_list(&dms_html)?;
+        tracing::debug!(count = dms.len(), "parsed X DM list");
+        items.extend(dms);
 
         let seen = self.read_seen();
         let search = query
@@ -1562,25 +1565,50 @@ fn map_cdp(error: chromiumoxide::error::CdpError) -> ProviderError {
 #[async_trait]
 impl XClient for ChromeClient {
     async fn open(&mut self, url: &str) -> Result<(), ProviderError> {
-        let navigation = tokio::time::timeout(PAGE_TIMEOUT, self.page.goto(url)).await;
-        let Ok(navigation) = navigation else {
-            return Err(ProviderError::Timeout);
-        };
-        if let Err(error) = navigation {
-            // CDP reports a navigation error for non-2xx responses even when a
-            // body rendered. X answers a signed-out browser with an error
-            // status; the body is still the login page, so let the parser
-            // classify it instead of calling every 4xx a browser failure.
-            match self.page.content().await {
-                Ok(html) if html.trim().len() > 256 => {
-                    tracing::debug!(%error, "navigation returned an HTTP error; classifying the rendered body");
-                    pause(self.action_delay_ms).await;
-                    return Ok(());
-                }
-                _ => return Err(map_cdp(error)),
+        use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
+
+        tracing::debug!(url, "opening X page");
+        let previous_url = self.page.url().await.ok().flatten();
+        let previous_html = self.page.content().await.unwrap_or_default();
+
+        // `Page.navigate` returns as soon as the navigation is committed. X is
+        // an SPA that often never fires the load event `goto` waits for, so
+        // observe the URL and DOM instead of trusting a lifecycle event.
+        self.page
+            .execute(NavigateParams::new(url))
+            .await
+            .map_err(map_cdp)?;
+
+        let mut started = std::time::Instant::now();
+        let mut retried = false;
+        loop {
+            let current_url = self.page.url().await.ok().flatten();
+            let html = self.page.content().await.unwrap_or_default();
+            let url_changed = current_url.is_some() && current_url != previous_url;
+            let html_changed = !html.is_empty() && html != previous_html;
+            if html.trim().len() > 512 && (url_changed || html_changed) {
+                break;
             }
+            if started.elapsed() >= PAGE_TIMEOUT {
+                if retried {
+                    return Err(ProviderError::Timeout);
+                }
+                retried = true;
+                tracing::debug!(url, "X page did not render; navigating once more");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                self.page
+                    .execute(NavigateParams::new(url))
+                    .await
+                    .map_err(map_cdp)?;
+                started = std::time::Instant::now();
+                continue;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
+
         pause(self.action_delay_ms).await;
+        let html_bytes = self.page.content().await.map_or(0, |h| h.len());
+        tracing::debug!(url, html_bytes, "opened X page");
         Ok(())
     }
 

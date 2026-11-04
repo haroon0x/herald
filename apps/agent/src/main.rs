@@ -35,9 +35,38 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Third-party crates whose debug logs can contain page text, headers, or
+/// cookies. Herald's own targets keep whatever level the user asked for.
+const LOG_CAPS: [&str; 11] = [
+    "chromiumoxide",
+    "html5ever",
+    "markup5ever",
+    "tendril",
+    "scraper",
+    "hyper",
+    "hyper_util",
+    "reqwest",
+    "tungstenite",
+    "async_tungstenite",
+    "h2",
+];
+
+fn log_filter(filter: &str) -> String {
+    use std::fmt::Write as _;
+    let mut filter = filter.to_string();
+    for target in LOG_CAPS {
+        let _ = write!(filter, ",{target}=warn");
+    }
+    filter
+}
+
 fn init_tracing(filter: &str) {
+    // chromiumoxide logs raw CDP messages at debug, including request headers
+    // with session cookies. Cap its target regardless of the user filter so a
+    // debugging session cannot print `auth_token` or `ct0`.
+    let filter = log_filter(filter);
     let filter = tracing_subscriber::EnvFilter::try_new(filter)
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,chromiumoxide=warn"));
 
     // Logging goes to stderr and is optional; a failed initialization (for
     // example in tests) must not change command behavior.
@@ -47,4 +76,18 @@ fn init_tracing(filter: &str) {
         .with_target(false)
         .without_time()
         .try_init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracing_caps_chromiumoxide_below_debug() {
+        let filter = log_filter("debug");
+        for target in LOG_CAPS {
+            assert!(filter.contains(&format!("{target}=warn")), "{target}");
+        }
+        assert!(tracing_subscriber::EnvFilter::try_new(filter).is_ok());
+    }
 }

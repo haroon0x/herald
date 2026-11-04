@@ -38,6 +38,10 @@ not as released behaviour until the canary in the milestone handoff passes.
   `profile_dir` that looks like a shared browser profile is refused before
   launch, and `x.read_only` blocks every write. These are local precautions,
   not evasion.
+- Third-party debug logs are capped so `--log debug` cannot print session
+  cookies or page HTML (chromiumoxide, html5ever, hyper, reqwest, ...).
+- Stale Chrome profile locks are reclaimed, navigation and shutdown are
+  bounded, and a crashed browser cannot hang `herald providers`.
 - `herald x login` opens ordinary Chrome on the dedicated profile instead of a
   CDP session, because Google's OAuth refuses automation-controlled browsers.
   Herald's own browser no longer passes `--enable-automation`.

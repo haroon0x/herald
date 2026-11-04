@@ -429,6 +429,17 @@ impl XProvider {
         })
     }
 
+    async fn health_inner(&self, slot: &mut Option<Box<dyn XClient>>) -> Result<(), ProviderError> {
+        let client = self.ensure_client(slot).await?;
+        client.open(HOME_URL).await?;
+        let state = parse_compose_state(&client.html().await?)?;
+        if state.authenticated {
+            Ok(())
+        } else {
+            Err(ProviderError::NotAuthenticated)
+        }
+    }
+
     async fn list_recent_inner(
         &self,
         slot: &mut Option<Box<dyn XClient>>,
@@ -750,17 +761,7 @@ impl CommunicationProvider for XProvider {
 
     async fn health(&self) -> ProviderHealth {
         let mut slot = self.client.lock().await;
-        let result = async {
-            let client = self.ensure_client(&mut slot).await?;
-            client.open(HOME_URL).await?;
-            let state = parse_compose_state(&client.html().await?)?;
-            if state.authenticated {
-                Ok(())
-            } else {
-                Err(ProviderError::NotAuthenticated)
-            }
-        }
-        .await;
+        let result = self.health_inner(&mut slot).await;
         self.release(&mut slot).await;
         match result {
             Ok(()) => ProviderHealth::Ready,
@@ -1398,6 +1399,72 @@ pub fn dedicated_profile_problem(profile_dir: &Path) -> Option<String> {
         .map(|error| error.to_string())
 }
 
+/// Chrome writes `SingletonLock` while a profile is open. Wait briefly for a
+/// closing browser to release it; do not delete the file (Chrome owns it).
+async fn wait_for_profile_unlock(
+    profile_dir: &Path,
+    timeout: Duration,
+) -> Result<(), ProviderError> {
+    let lock = profile_dir.join("SingletonLock");
+    if !lock.exists() {
+        return Ok(());
+    }
+    if lock_is_stale(&lock) {
+        // Chrome exited without cleaning up (a killed sign-in window, a crash).
+        // Chrome would normally reclaim these itself; removing them here keeps
+        // Herald from permanently refusing a profile no process owns.
+        for name in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+            let _ = std::fs::remove_file(profile_dir.join(name));
+        }
+        return Ok(());
+    }
+
+    let started = std::time::Instant::now();
+    while lock.exists() && started.elapsed() < timeout {
+        if lock_is_stale(&lock) {
+            for name in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+                let _ = std::fs::remove_file(profile_dir.join(name));
+            }
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    if lock.exists() {
+        return Err(ProviderError::NotConfigured(format!(
+            "the X profile is still in use ({}); close the other Chrome window and retry",
+            lock.display()
+        )));
+    }
+    Ok(())
+}
+
+/// A Chrome singleton lock is a symlink like `hostname-<pid>`. On Linux the
+/// PID is checkable; elsewhere assume it is live and let the wait handle it.
+fn lock_is_stale(lock: &Path) -> bool {
+    let Ok(target) = std::fs::read_link(lock) else {
+        return false;
+    };
+    let Some(name) = target.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(pid) = name
+        .rsplit('-')
+        .next()
+        .and_then(|pid| pid.parse::<u32>().ok())
+    else {
+        return false;
+    };
+    #[cfg(target_os = "linux")]
+    {
+        !std::path::Path::new("/proc").join(pid.to_string()).exists()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Real client: Chrome over CDP.
 // ---------------------------------------------------------------------------
@@ -1414,6 +1481,10 @@ struct ChromeClient {
 impl ChromeClient {
     async fn launch(config: &XConfig, headless: bool) -> Result<Self, ProviderError> {
         ensure_dedicated_profile(&config.profile_dir)?;
+        // A Chrome that just exited (often the sign-in window) can still hold
+        // the profile for a moment. Launching into that race resets the CDP
+        // socket and looks like a browser failure.
+        wait_for_profile_unlock(&config.profile_dir, Duration::from_secs(5)).await?;
         // Minimal flag set: chromiumoxide's defaults include
         // `--enable-automation`, which adds the "controlled by automated
         // software" infobar and sets navigator.webdriver. Herald does not claim
@@ -1491,7 +1562,11 @@ fn map_cdp(error: chromiumoxide::error::CdpError) -> ProviderError {
 #[async_trait]
 impl XClient for ChromeClient {
     async fn open(&mut self, url: &str) -> Result<(), ProviderError> {
-        if let Err(error) = self.page.goto(url).await {
+        let navigation = tokio::time::timeout(PAGE_TIMEOUT, self.page.goto(url)).await;
+        let Ok(navigation) = navigation else {
+            return Err(ProviderError::Timeout);
+        };
+        if let Err(error) = navigation {
             // CDP reports a navigation error for non-2xx responses even when a
             // body rendered. X answers a signed-out browser with an error
             // status; the body is still the login page, so let the parser
@@ -1562,8 +1637,16 @@ impl XClient for ChromeClient {
     }
 
     async fn close(&mut self) -> Result<(), ProviderError> {
-        self.browser.close().await.map_err(map_cdp)?;
-        let _ = self.browser.wait().await;
+        // A dead CDP socket must not hang shutdown: close is best-effort, and
+        // dropping the browser kills the child.
+        match tokio::time::timeout(Duration::from_secs(5), self.browser.close()).await {
+            Ok(Ok(_)) => {
+                let _ = tokio::time::timeout(Duration::from_secs(5), self.browser.wait()).await;
+            }
+            _ => {
+                let _ = tokio::time::timeout(Duration::from_secs(5), self.browser.kill()).await;
+            }
+        }
         self.handler.abort();
         Ok(())
     }

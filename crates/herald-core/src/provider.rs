@@ -1,3 +1,6 @@
+//! Provider-facing types: `ProviderId`, message ids, threads, and `Untrusted`.
+//! `ProviderId` is a closed enum; adding one is a code change, not a config change.
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -34,7 +37,7 @@ impl ProviderId {
     /// plan is inert instead of pretending a read happened.
     #[must_use]
     pub const fn is_implemented(self) -> bool {
-        matches!(self, Self::Fake | Self::Maildir)
+        matches!(self, Self::Fake | Self::Maildir | Self::X)
     }
 }
 
@@ -193,6 +196,6 @@ mod tests {
     #[test]
     fn planned_providers_are_marked_as_such() {
         assert!(!ProviderId::Gmail.is_implemented());
-        assert!(!ProviderId::X.is_implemented());
+        assert!(ProviderId::X.is_implemented());
     }
 }

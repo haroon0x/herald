@@ -1,3 +1,6 @@
+//! The action state machine. `transition` is the single source of truth for legal
+//! state moves; storage enforces it, callers cannot bypass it.
+
 use serde::{Deserialize, Serialize};
 
 /// Lifecycle of a write action.

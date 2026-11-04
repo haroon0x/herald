@@ -1,7 +1,12 @@
+//! Authorization: who may do what. `authorize` turns a validated action into
+//! `Allowed`, `NeedsApproval`, or `Rejected`. Sends are never `Allowed` except on the
+//! autopost lane, which is scoped to original posts and every rail must pass.
+
 use serde::{Deserialize, Serialize};
 
 use crate::action::{Action, Target};
 use crate::provider::ProviderId;
+use crate::quality::passes_tweet_quality_floor;
 
 /// Local policy knobs. In the MVP `allow_send` defaults to false: reading and
 /// drafting work immediately, sending must be turned on deliberately.
@@ -9,6 +14,44 @@ use crate::provider::ProviderId;
 pub struct PolicyConfig {
     pub allow_send: bool,
     pub max_body_chars: usize,
+    pub autopost: AutopostPolicy,
+}
+
+/// The ONLY path by which an outbound action can skip per-action approval —
+/// and it exists solely for original X posts to the user's own timeline.
+/// Every rail must pass, and the caller supplies the two computed rails
+/// (`quiet_now`, `remaining_today`); the rest are configuration. Missing or
+/// unknown values fail closed.
+///
+/// DMs and replies to mentions are never autoposted in this build. Widening
+/// the surface is a policy decision that needs its own ADR and tests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutopostPolicy {
+    /// Master switch. Off by default.
+    pub enabled: bool,
+    /// Maximum number of outbound posts per calendar day, across manual and
+    /// autonomous sends.
+    pub daily_limit: u32,
+    /// Deterministic quality floor in `[0, 10]` (the Zyquor-calibrated scorer).
+    pub min_quality: u8,
+    /// True when the caller has determined the current time is inside the
+    /// configured quiet hours.
+    pub quiet_now: bool,
+    /// Posts left in today's budget, computed by the caller from the action
+    /// log. Zero blocks the lane.
+    pub remaining_today: u32,
+}
+
+impl Default for AutopostPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            daily_limit: 5,
+            min_quality: 7,
+            quiet_now: false,
+            remaining_today: 5,
+        }
+    }
 }
 
 impl Default for PolicyConfig {
@@ -16,6 +59,7 @@ impl Default for PolicyConfig {
         Self {
             allow_send: false,
             max_body_chars: 8_000,
+            autopost: AutopostPolicy::default(),
         }
     }
 }
@@ -72,8 +116,11 @@ impl Decision {
 
 /// Apply the approval policy to a validated action.
 ///
-/// Reads and drafts are local and need no approval. Every send requires an
-/// explicit approval request, even when the user already said "send it".
+/// Reads and drafts are local and need no approval. A send to the timeline
+/// (`create_post`) may run without an approval when EVERY autopost rail
+/// passes; anything else — any rail failing, or a target that is not the
+/// timeline — falls back to the approval queue. Nothing is ever sent
+/// silently.
 #[must_use]
 pub fn authorize(action: &Action, config: &PolicyConfig) -> Decision {
     match action {
@@ -91,6 +138,10 @@ pub fn authorize(action: &Action, config: &PolicyConfig) -> Decision {
                 });
             }
 
+            if autopost_allows(send, &config.autopost) {
+                return Decision::Allowed;
+            }
+
             Decision::NeedsApproval(ApprovalRequest {
                 provider: send.provider,
                 target: send.target.clone(),
@@ -99,6 +150,18 @@ pub fn authorize(action: &Action, config: &PolicyConfig) -> Decision {
             })
         }
     }
+}
+
+/// Every rail must pass. Anything else — disabled switch, quiet hours, an
+/// exhausted daily budget, a body below the floor — fails closed.
+fn autopost_allows(send: &crate::action::SendAction, autopost: &AutopostPolicy) -> bool {
+    if !autopost.enabled || autopost.quiet_now || autopost.remaining_today == 0 {
+        return false;
+    }
+    if !matches!(send.target, Target::Timeline) {
+        return false;
+    }
+    passes_tweet_quality_floor(&send.body, autopost.min_quality)
 }
 
 #[cfg(test)]
@@ -175,10 +238,105 @@ mod tests {
         let policy = PolicyConfig {
             allow_send: true,
             max_body_chars: 4,
+            ..PolicyConfig::default()
         };
         assert!(matches!(
             authorize(&send("hello"), &policy),
             Decision::Rejected(Rejection::BodyTooLong { .. })
+        ));
+    }
+
+    fn timeline_send(body: &str) -> Action {
+        Action::Send(SendAction {
+            provider: ProviderId::X,
+            target: Target::Timeline,
+            body: body.to_string(),
+            body_hash: body_hash(body),
+        })
+    }
+
+    fn autopost_policy() -> PolicyConfig {
+        PolicyConfig {
+            allow_send: true,
+            autopost: AutopostPolicy {
+                enabled: true,
+                daily_limit: 3,
+                min_quality: 0, // quality rail disabled for mechanics tests
+                quiet_now: false,
+                remaining_today: 3,
+            },
+            ..PolicyConfig::default()
+        }
+    }
+
+    #[test]
+    fn timeline_post_does_not_autopost_by_default() {
+        let policy = PolicyConfig {
+            allow_send: true,
+            ..PolicyConfig::default()
+        };
+        assert!(matches!(
+            authorize(&timeline_send("hello world"), &policy),
+            Decision::NeedsApproval(_)
+        ));
+    }
+
+    #[test]
+    fn timeline_post_autoposts_when_every_rail_passes() {
+        assert!(matches!(
+            authorize(&timeline_send("Thursday works."), &autopost_policy()),
+            Decision::Allowed
+        ));
+    }
+
+    #[test]
+    fn thread_send_never_autoposts() {
+        let policy = autopost_policy();
+        assert!(matches!(
+            authorize(&send("hi"), &policy),
+            Decision::NeedsApproval(_)
+        ));
+    }
+
+    #[test]
+    fn quiet_hours_block_autopost() {
+        let mut policy = autopost_policy();
+        policy.autopost.quiet_now = true;
+        assert!(matches!(
+            authorize(&timeline_send("Thursday works."), &policy),
+            Decision::NeedsApproval(_)
+        ));
+    }
+
+    #[test]
+    fn exhausted_budget_blocks_autopost() {
+        let mut policy = autopost_policy();
+        policy.autopost.remaining_today = 0;
+        assert!(matches!(
+            authorize(&timeline_send("Thursday works."), &policy),
+            Decision::NeedsApproval(_)
+        ));
+    }
+
+    #[test]
+    fn low_quality_blocks_autopost() {
+        let mut policy = autopost_policy();
+        policy.autopost.min_quality = 9; // "Thursday works." scores 3
+        assert!(matches!(
+            authorize(&timeline_send("Thursday works."), &policy),
+            Decision::NeedsApproval(_)
+        ));
+    }
+
+    #[test]
+    fn slop_content_blocks_autopost() {
+        let policy = autopost_policy();
+        assert!(matches!(
+            authorize(
+                &timeline_send("let's dive in!!! game-changer, leverage unlock synergy"),
+                &policy
+            ),
+            Decision::NeedsApproval(_)
         ));
     }
 }

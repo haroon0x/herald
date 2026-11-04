@@ -1,3 +1,6 @@
+//! One clock for the whole system: milliseconds since the Unix epoch, UTC.
+//! Everything compares against this and nothing else.
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Current unix time in milliseconds.

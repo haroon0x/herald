@@ -1,3 +1,5 @@
+//! Errors planning and validation can produce. Everything here fails closed.
+
 use crate::action::Operation;
 
 /// Why a raw planner output cannot become an executable action.

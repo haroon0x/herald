@@ -1,3 +1,9 @@
+//! The typed action ladder's rungs 1-2: `ActionPlan` (untrusted) to `Action` (validated).
+//!
+//! `validate_plan` is the only gate between model output and providers. It rejects
+//! ambiguity, missing bodies, and unknown targets; it never rewrites a body and never
+//! invents an identifier.
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -39,6 +45,7 @@ pub enum Operation {
     SummarizeThread,
     PrepareReply,
     SendReply,
+    CreatePost,
 }
 
 impl Operation {
@@ -52,17 +59,21 @@ impl Operation {
             Self::SummarizeThread => "summarize_thread",
             Self::PrepareReply => "prepare_reply",
             Self::SendReply => "send_reply",
+            Self::CreatePost => "create_post",
         }
     }
 
     #[must_use]
     pub const fn is_outbound(self) -> bool {
-        matches!(self, Self::SendReply)
+        matches!(self, Self::SendReply | Self::CreatePost)
     }
 
     #[must_use]
     pub const fn needs_body(self) -> bool {
-        matches!(self, Self::PrepareReply | Self::SendReply)
+        matches!(
+            self,
+            Self::PrepareReply | Self::SendReply | Self::CreatePost
+        )
     }
 }
 
@@ -79,6 +90,9 @@ pub enum Target {
     Thread { thread_id: ThreadId },
     /// The latest message from `sender`, resolved by Rust.
     LatestFrom { sender: String },
+    /// The user's own X timeline. Valid only for `create_post`; it is not a
+    /// conversation and it never identifies a recipient.
+    Timeline,
 }
 
 impl Target {
@@ -88,6 +102,7 @@ impl Target {
             Self::Description { description } => description.clone(),
             Self::Thread { thread_id } => format!("thread {thread_id}"),
             Self::LatestFrom { sender } => format!("latest message from {sender}"),
+            Self::Timeline => "your timeline".to_string(),
         }
     }
 }
@@ -194,7 +209,7 @@ pub fn validate_plan(plan: ActionPlan) -> Result<Action, PlanError> {
                 body,
             }))
         }
-        Operation::SendReply => {
+        Operation::SendReply | Operation::CreatePost => {
             let body = require_body(plan.reply_body, plan.operation)?;
             let body_hash = body_hash(&body);
             Ok(Action::Send(SendAction {
@@ -219,9 +234,9 @@ fn read_operation(operation: Operation) -> Result<ReadOperation, PlanError> {
         Operation::GetThread => Ok(ReadOperation::GetThread),
         Operation::SearchMessages => Ok(ReadOperation::SearchMessages),
         Operation::SummarizeThread => Ok(ReadOperation::SummarizeThread),
-        Operation::PrepareReply | Operation::SendReply => Err(PlanError::InvalidPlan(
-            "reply operation is not a read action".to_string(),
-        )),
+        Operation::PrepareReply | Operation::SendReply | Operation::CreatePost => Err(
+            PlanError::InvalidPlan("reply operation is not a read action".to_string()),
+        ),
     }
 }
 

@@ -11,6 +11,7 @@ pub mod intent;
 pub mod policy;
 pub mod prompt;
 pub mod provider;
+pub mod quality;
 pub mod rules;
 pub mod schema;
 pub mod state;
@@ -21,8 +22,12 @@ pub use action::{
     ThreadId, body_hash, validate_plan,
 };
 pub use error::PlanError;
-pub use policy::{ApprovalRequest, Decision, PolicyConfig, Rejection, authorize};
+pub use policy::{ApprovalRequest, AutopostPolicy, Decision, PolicyConfig, Rejection, authorize};
 pub use provider::{
     MessageId, MessageQuery, MessageSummary, ProviderId, ProviderMessage, Thread, Untrusted,
+};
+pub use quality::{
+    is_clean_tweet_text, is_interrogation_dodge_reply, passes_tweet_quality_floor,
+    score_tweet_quality,
 };
 pub use state::{ActionState, TransitionError};

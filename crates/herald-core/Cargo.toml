@@ -13,6 +13,7 @@ jsonschema = "0.38"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+regex.workspace = true
 thiserror.workspace = true
 
 [lints]

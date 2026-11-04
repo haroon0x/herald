@@ -1,7 +1,7 @@
 # 0007: Browser automation is not the provider layer
 
 Date: 2026-11-04
-Status: Accepted
+Status: Accepted — the X adapter is the constrained exception in [0008](0008-x-browser-adapter.md).
 
 ## Context
 

@@ -160,11 +160,13 @@ prepare a reply, send a prepared reply, and look for a reply it already sent.
 It cannot click, type into arbitrary fields, run JavaScript, navigate to a URL,
 or execute a selector supplied by the planner.
 
-That constraint is the reason there is no browser automation in v1. A browser
-adapter that exposes "click this element" hands the planner an execution
-primitive, and prompt injection then becomes remote control. A browser adapter
-that exposes only the seven methods above is possible, but it must own every
-selector and stop on any layout surprise. The Maildir adapter needs neither.
+A browser adapter that exposed "click this element" would hand the planner an
+execution primitive, and prompt injection would become remote control. The X
+adapter is the one browser provider, and it keeps the surface at the seven
+methods: every selector and URL is a constant in its own module, thread ids are
+validated before navigation, and any unexpected page is a hard stop. See
+[ADR 0008](decisions/0008-x-browser-adapter.md). The Maildir adapter needs no
+browser at all.
 
 `PreparedAction` carries the client token (the action id). `send_reply` must be
 idempotent on it: a second call with the same token returns the existing
@@ -415,11 +417,13 @@ message.
 - **A new output format** belongs in the CLI layer. The JSON envelope
   (`ok`, `command`, `data`) is stable.
 
-Intentionally absent from v1: auto-send rules, tool registries, agent loops,
-multi-user support, sync, mobile, notifications, scheduling, archive or delete
-operations, attachments, and browser automation. Each one is a deliberate
-design decision rather than a missing feature, and the roadmap records when
-each might arrive.
+Intentionally absent from v1: general auto-send rules, tool registries, agent
+loops, multi-user support, sync, mobile, notifications, scheduling, archive or
+delete operations, and attachments. The only browser automation is the X
+adapter, and the only send without a per-action approval is the scoped autopost
+lane for original timeline posts (ADR 0008 and 0009). Each of these is a
+deliberate design decision rather than a missing feature, and the roadmap
+records when each might change.
 
 ## Further reading
 

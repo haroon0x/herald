@@ -14,7 +14,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/status-v1.0.0-green?style=flat-square" alt="Status: v1.0.0"></a>
 </p>
 
-- **Nothing sends itself.** Every outbound message becomes a pending approval that shows the provider, the resolved thread, the exact body, and its SHA-256 hash. `herald approve` is the only path to the wire.
+- **Nothing sends itself.** Every outbound message becomes a pending approval that shows the provider, the resolved thread, the exact body, and its SHA-256 hash. `herald approve` is the only path to the wire — except original timeline posts on the explicitly enabled autopost lane, which requires every rail (double opt-in, kill switch, quiet hours, daily cap, quality floor).
 - **Nothing leaves the machine by default.** Deterministic rules and a small local model do the planning. No telemetry, no cloud inference, and `init` never writes a credential; SMTP passwords come from the environment.
 - **Nothing is retried blindly.** Writes are idempotent on a client token, and a timeout ends in `uncertain`, which is resolved by reading the Sent folder, not by sending again.
 
@@ -24,7 +24,7 @@
 
 **Inference is local.** Planning uses a rules router first and a grammar-constrained classifier only when the rules miss. The classifier picks one of seven operations and a clarification flag. A 0.8B model is enough because it is never asked to hold intent, schema, and wording in one request.
 
-**Approval comes before every send.** `allow_send` defaults to `false`. When it is enabled, each send still writes a pending approval with the body and hash. `approve` re-resolves the thread immediately before sending, refuses if the target changed, and verifies the result. There is no auto-send rule, and the policy type has no way to express one.
+**Approval comes before every send.** `allow_send` defaults to `false`. When it is enabled, each send still writes a pending approval with the body and hash. `approve` re-resolves the thread immediately before sending, refuses if the target changed, and verifies the result. The one exception is the scoped autopost lane for original X posts ([ADR 0009](docs/decisions/0009-scoped-autopost.md)): replies and DMs never use it, and every rail must pass or the post queues like anything else.
 
 **Writes are idempotent and auditable.** Each action carries a client token. A second send with the same token returns the existing receipt. Every state change is appended to an audit log, and the state machine rejects illegal transitions at the storage layer.
 
@@ -203,7 +203,7 @@ flowchart LR
 
 The full design is in [docs/architecture.md](docs/architecture.md). The short version: the model classifies, Rust decides, the provider executes, SQLite remembers.
 
-Herald does not drive a browser. Providers are protocol or filesystem adapters: Maildir plus SMTP today, IMAP next. If you are looking for a Playwright-style Rust client for another project, `chromiumoxide` is the closest; for Herald, browser automation was rejected for reliability, testability, and credential-safety reasons. See [ADR 0007](docs/decisions/0007-browser-automation.md) and the [FAQ](docs/faq.md).
+Herald drives a browser in exactly one place: the X adapter. X has no free API for this use case, so `herald x login` opens a visible window on a dedicated profile, you sign in, and later commands drive the same profile with a fixed set of selectors. No selector, URL, or script ever comes from the planner, and a challenge or unexpected page is a hard stop. Mail still uses Maildir and SMTP. See [ADR 0008](docs/decisions/0008-x-browser-adapter.md) and [ADR 0009](docs/decisions/0009-scoped-autopost.md).
 
 ## Safety model
 
@@ -211,7 +211,7 @@ Herald does not drive a browser. Providers are protocol or filesystem adapters: 
 | --- | --- |
 | Model tries to execute an action | It emits JSON only. `validate_plan` maps it to a closed `Action` enum; there is no tool registry and no "run this" field. |
 | Prompt injection in message text | Retrieved text is wrapped in `<untrusted-message>` blocks and labelled as data. The planner prompt and the provider input surfaces have injection tests. |
-| Send without consent | `allow_send` defaults to false. Every send writes an approval row; `approve` re-resolves the thread and re-checks the body hash. |
+| Send without consent | `allow_send` defaults to false. Every send writes an approval row; `approve` re-resolves the thread and re-checks the body hash. The autopost lane is limited to original timeline posts and needs every rail. |
 | Duplicate send after a timeout | Client token plus `X-Herald-Token` plus a Sent-folder check. `uncertain` is reconciled, never retried. |
 | Content leaving the machine | Local inference is the default. A remote endpoint works only if you configure one, and `doctor` says so. |
 | Reading your whole mailbox | Reads are explicit commands with bounded limits. Only message metadata is stored; bodies are not kept after a decision. |
@@ -286,15 +286,16 @@ crates/herald-storage    SQLite schema, dedupe, action records, audit, approvals
 crates/herald-runtime    model manifest, checksums, llama-server, OpenAI client
 crates/herald-config     config.toml, precedence, paths, secret lookup
 apps/agent               the `herald` CLI, planner, approval and send loop
-eval/                    42-case command set, including injection and ambiguity
+eval/                    45-case command set, including injection and ambiguity
 models/                  pinned model manifest
 docs/                    architecture, providers, CLI, threat model, ADRs
 experiments/wsp/         weight-space programming pilot (research, not shipped)
+index.md                 repo map and working standards (agents start here)
 ```
 
 ## Roadmap
 
-v1.0 ships the demo and Maildir providers, the approval queue, reconciliation, configuration, JSON output, and both inference backends. Next: IMAP read-only (v1.1), richer summaries and search (v1.2), packaging for Homebrew, Scoop, and Debian (v1.3), then a capped multi-step tool loop and a desktop surface.
+v1.0 ships the demo and Maildir providers, the approval queue, reconciliation, configuration, JSON output, and both inference backends. The X adapter and its scoped autopost lane are in progress on top of v1.0 (ADR 0008 and 0009). Next: IMAP read-only (v1.1), richer summaries and search (v1.2), packaging for Homebrew, Scoop, and Debian (v1.3), then a capped multi-step tool loop and a desktop surface.
 
 The ladder from "Rust decides everything" to "the model proposes, Rust disposes" is documented, with measured numbers, in [docs/roadmap.md](docs/roadmap.md).
 

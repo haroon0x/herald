@@ -1,9 +1,10 @@
 # Providers
 
 A provider is an adapter between Herald's typed actions and one place where
-messages live. v1 ships two: `fake` for demos, tests, and evals, and `maildir`
-for real local mail. `gmail` and `x` exist as enum variants and are explicitly
-not implemented.
+messages live. v1 ships three: `fake` for demos, tests, and evals, `maildir`
+for real local mail, and `x` for mentions, DMs, replies, and original posts
+through a dedicated browser profile. `gmail` exists as an enum variant and is
+explicitly not implemented.
 
 Every provider implements the same capability port:
 
@@ -35,7 +36,7 @@ change.
 | `fake` | Seeded in-memory inbox | In-memory send, verified | Implemented | Demos, tests, evals, trying the approval flow |
 | `maildir` | Local Maildir (`new/`, `cur/`) | SMTP submission plus a Sent copy | Implemented | Real mail that already syncs to disk |
 | `gmail` | None | None | Planned, enum only | Not available in v1 |
-| `x` | None | None | Planned, enum only | Not available in v1 |
+| `x` | Mentions and DMs in a signed-in Chrome profile | Reply, DM, original post | Implemented, not yet live-canaried | X without opening x.com |
 
 `default_provider` in `config.toml` selects one. `herald ask --provider P`
 overrides it for a single command. `herald providers` prints the table above,
@@ -267,10 +268,82 @@ herald doctor
 exist, that `sent_path` is writable, that `from` parses as an address, and that
 the password environment variable is set. It does not send a test message.
 
-## gmail and x
+## x (browser adapter)
 
-These are enum variants marked planned. There is no adapter, no OAuth client,
-and no browser profile. The CLI says so instead of pretending:
+X has no free read/write API for this use case, so the adapter drives the real
+web app through Chrome DevTools Protocol (`chromiumoxide`) in a **dedicated
+profile**. The reasoning and the constraints are in
+[ADR 0008](decisions/0008-x-browser-adapter.md). It is the only browser
+automation in the codebase.
+
+### Setup
+
+```bash
+# config.toml
+[x]
+handle = "@you"          # required for verified writes
+headless = true          # must be true for normal commands
+close_after = true
+
+herald x login           # opens a visible window; you sign in yourself
+herald providers         # x should report ready
+```
+
+`herald x login` is the only command that shows a window. Herald never reads
+cookies, never types credentials, and never completes a challenge. The profile
+lives at `<data-dir>/profiles/x` unless `profile_dir` says otherwise; it must
+never point at an everyday Chrome profile. A missing `x.handle` makes writes
+refuse to prepare: verification needs an identity to attribute the result to.
+
+### Threads
+
+| Namespace | Meaning | Valid for |
+| --- | --- | --- |
+| `mention:<status_id>` | Public conversation rooted at a tweet | Read, reply |
+| `dm:<conversation_id>` | Private conversation | Read, reply (a DM) |
+| `timeline` | The compose surface. Not a conversation, identifies no recipient | Post only |
+
+`list_recent` merges the mentions tab and the DM list, newest first, and honours
+`--unread`, `search`, and `limit`. Unread is **local**: X exposes no reliable
+unread state in the DOM, so the adapter keeps a bounded seen-ledger at
+`<data-dir>/x-seen.json` and `get_thread` marks what it showed as seen.
+
+### Writes, idempotency, and verification
+
+`send_reply` opens the surface, fills the composer, clicks send once, then
+re-reads the page and looks for the exact body attributed to the configured
+handle. The receipt carries the status id for a post or reply and a documented
+synthetic id (`dm:<conversation_id>:<unix_ms>`) for a DM, where the DOM exposes
+no event id.
+
+A sent-ledger at `<data-dir>/x-sent.json` maps the client token to its receipt.
+Replaying a token returns the stored receipt and never posts twice. An
+unverified result stays `uncertain`; `herald reconcile` reads the ledger through
+`find_sent` and never retries.
+
+### Hard stops and failures
+
+| Page state | Result |
+| --- | --- |
+| Signed out (login form) | `NotAuthenticated`; run `herald x login` |
+| Captcha, identity challenge, account warning | `UnexpectedLayout` stop; resolve it in the browser |
+| Rate limit page | `RateLimited`; wait, do not retry around it |
+| Unexpected or missing DOM | `UnexpectedLayout`; the adapter never guesses |
+| Chrome missing | `NotConfigured`; install Chrome/Chromium or set `CHROME` |
+
+Selectors are constants in `herald-provider/src/x.rs`, each commented with the
+X page it belongs to. Thread ids are validated before any navigation, so page
+content cannot steer a URL. Fixtures in the module are hand-written
+approximations and are labelled as such; re-capture them from the dedicated
+profile before trusting the selectors against the live site.
+
+Post metrics are **not** implemented. The seven-method provider surface has no
+metrics operation, and adding one is a design change (see ADR 0008).
+
+## gmail
+
+`gmail` is an enum variant marked planned. There is no adapter and no OAuth
+client. The CLI says so instead of pretending:
 
 ```console
 $ herald ask "check my gmail" --provider gmail
@@ -280,12 +353,9 @@ target:     unread messages
 execution: skipped — no gmail adapter in this build; plan only
 ```
 
-Plans still parse and validate for these providers, which keeps the enum and
-the eval set honest. Execution stops at the missing adapter and is audited as
-`deferred`.
-
-Gmail is planned for v1.1 as read-only IMAP using an app password, not OAuth.
-X has no committed date. Browser automation is not on the roadmap for either;
+Plans still parse and validate, which keeps the enum and the eval set honest.
+Execution stops at the missing adapter and is audited as `deferred`. Gmail is
+planned for a later release as read-only IMAP using an app password, not OAuth;
 see [decisions/0004-email-provider-maildir-smtp.md](decisions/0004-email-provider-maildir-smtp.md).
 
 ## Adding a provider
@@ -327,17 +397,18 @@ in `tests/`:
 
 ## Provider capability matrix
 
-| Capability | fake | maildir | gmail | x |
+| Capability | fake | maildir | x | gmail |
 | --- | --- | --- | --- | --- |
-| List recent | yes | yes | planned | planned |
-| List unread | yes | yes | planned | planned |
-| Search | substring | substring | planned | planned |
-| Get thread | yes | yes | planned | planned |
-| Prepare reply | yes | yes | planned | planned |
-| Send reply | in-memory | SMTP | no | no |
-| Verify send | in-thread | Sent folder | no | no |
-| Reconcile | in-thread | Sent folder | no | no |
-| Mark as read | n/a | no, read-only | n/a | n/a |
+| List recent | yes | yes | mentions + DMs | planned |
+| List unread | yes | yes | seen-ledger | planned |
+| Search | substring | substring | substring | planned |
+| Get thread | yes | yes | yes | planned |
+| Prepare reply | yes | yes | yes (checks composer) | planned |
+| Send reply | in-memory | SMTP | browser composer | no |
+| Create post | no | no | timeline composer | no |
+| Verify send | in-thread | Sent folder | own-message body match | no |
+| Reconcile | in-thread | Sent folder | sent-ledger | no |
+| Mark as read | n/a | no, read-only | seen-ledger only | n/a |
 | Attachments | no | listed only | no | no |
 | Delete or archive | no | no | no | no |
 ---

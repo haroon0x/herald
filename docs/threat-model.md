@@ -88,7 +88,10 @@ a default, or a future feature.
 
 - `PolicyConfig::allow_send` defaults to `false`; a send without it is
   rejected before any approval exists.
-- `authorize` can only express a send as `NeedsApproval(ApprovalRequest)`.
+- `authorize` expresses a send as `NeedsApproval(ApprovalRequest)` except for
+  an original timeline post when every autopost rail passes
+  ([ADR 0009](decisions/0009-scoped-autopost.md)); that branch has one test per
+  rail and no other send can reach it.
 - The executor refuses `Action::Send` outright. The only caller of `send_reply`
   is `approve`, which loads the approval row by id.
 - There is no auto-send setting in the type system.
@@ -98,6 +101,49 @@ a default, or a future feature.
 `herald-core/src/policy.rs`. The executor guard in
 `apps/agent/src/send.rs::execute_allowed` refuses `Action::Send` with
 `invalid_state`; a direct test for that guard is still on the list.
+
+### Autonomous post without every rail
+
+**Path.** The autopost lane becomes a general auto-send: a reply or DM posts
+itself, the daily cap is bypassed, or a rail silently defaults to "pass".
+
+**Controls.** The lane is scoped to `Operation::CreatePost` with
+`Target::Timeline`; the executor refuses any other target on the autopost path.
+`allow_send` and `allow_autopost` are separate defaults-false switches. The
+kill switch is a file checked on every `ask`. Quiet hours and the daily budget
+are computed in the CLI and passed into core; a storage error yields zero
+remaining. The quality floor is deterministic local code, never the model. Any
+rail failing produces `NeedsApproval`. Audit details are prefixed `autopost:`
+so the lane is distinguishable after the fact.
+
+**Test.** The `policy.rs` autopost tests cover every rail individually
+(`autopost_disabled_needs_approval`, quiet hours, exhausted budget, wrong
+target, below-floor body, all-rails-pass); `herald-storage` proves the budget
+query counts approvals and executions, and a CLI test proves a post queues an
+approval while the lane is off.
+
+### Compromised X browser profile or page content
+
+**Path.** A page served by X (or an injected message) steers the adapter:
+changes the selector, the URL, or the action; or an attacker reads the profile
+and takes over the X session.
+
+**Controls.** Selectors and URLs are constants in
+`herald-provider/src/x.rs`; the planner cannot name either. Thread ids are
+validated against a numeric/`safe-id` grammar before navigation. Parsed text
+becomes `Untrusted<String>` and is never used in control flow. The profile is
+dedicated to Herald, so a compromise is bounded to the X account the user chose
+to sign in; Herald never extracts cookies or credentials into its own storage.
+Challenges, captchas, account warnings, rate limits, and unexpected DOM are hard
+stops rather than retries.
+
+**Test.** `injection_text_stays_inert_data`,
+`thread_ids_are_validated_before_any_navigation`,
+`health_maps_a_challenge_to_unavailable`,
+`compose_state_hard_stops_on_a_challenge`, and
+`compose_state_maps_rate_limit_to_the_taxonomy` in
+`herald-provider/src/x.rs`. The scripted `XClient` refuses any URL the test did
+not pre-approve, which proves page content cannot cause a navigation.
 
 ### Approval bypass by state manipulation
 
@@ -330,6 +376,13 @@ the data directory removes everything Herald keeps. See
 | Reads dedupe | `deduplicates_messages` | `herald-storage/src/lib.rs` |
 | Executor refuses sends | Guard in `execute_allowed`; direct test pending | `apps/agent/src/send.rs` |
 | Sender matching does not guess | `sender_matching_strips_a_leading_the` | `apps/agent/src/send.rs` |
+| No autopost without every rail | `autopost_*` tests | `herald-core/src/policy.rs` |
+| Daily budget counts approvals and posts | `autopost_budget_counts_approvals_and_executions_only` | `herald-storage/src/lib.rs` |
+| Posts queue without the lane | `a_post_without_the_autopost_lane_still_queues_an_approval` | `apps/agent/tests/cli.rs` |
+| Injection stays inert in X pages | `injection_text_stays_inert_data` | `herald-provider/src/x.rs` |
+| X ids cannot steer a URL | `thread_ids_are_validated_before_any_navigation` | `herald-provider/src/x.rs` |
+| X challenge is a hard stop | `health_maps_a_challenge_to_unavailable`, `compose_state_hard_stops_on_a_challenge` | `herald-provider/src/x.rs` |
+| X send never blind-retries | `send_timeout_is_never_retried`, `dm_send_is_idempotent_and_verified` | `herald-provider/src/x.rs` |
 | Provider failures end `failed` | `send_without_smtp_is_not_configured_and_leaves_mailbox_untouched` | `herald-provider/src/maildir.rs` |
 | Drafts never send | Draft path returns a hash without a provider call; test pending | `apps/agent/src/send.rs` |
 | No duplicate on replay | `same_token_sends_only_once` | `herald-provider/src/fake.rs` |

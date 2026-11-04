@@ -6,9 +6,9 @@ from the scaffold; that history is at the bottom.
 
 ## v1.0, shipped
 
-- Two providers: `fake` (seeded demo inbox) and `maildir` (local Maildir plus
-  SMTP with a verified Sent copy). `gmail` and `x` remain planned enums with no
-  adapter, and the CLI says so.
+- Two providers at release: `fake` (seeded demo inbox) and `maildir` (local
+  Maildir plus SMTP with a verified Sent copy). `gmail` and `x` were planned
+  enums with no adapter; the X adapter landed after this release (see below).
 - The full action ladder: `ActionPlan` to `Action` to `Decision` to `Approval`
   to `PreparedAction` to `ExecutionReceipt`.
 - Approval queue with retained body, body hash, resolved thread, and a 72-hour
@@ -28,9 +28,10 @@ from the scaffold; that history is at the bottom.
 - Documentation: architecture, providers, configuration, CLI, threat model,
   FAQ, ADRs.
 
-What v1.0 deliberately does not include: IMAP, Gmail, X, browser automation,
+What v1.0 deliberately did not include: IMAP, Gmail, X, browser automation,
 auto-send, attachments, archive or delete, multi-account, sync, notifications,
-scheduling, a GUI, and a multi-step agent loop.
+scheduling, a GUI, and a multi-step agent loop. X and its scoped autopost lane
+are the only exceptions added since (see the in-progress section below).
 
 ## Measured, not assumed
 
@@ -56,6 +57,27 @@ as clarifying, and the model is still measured separately.
 
 The 42-case set is unchanged in v1.0. It covers intent and refusal, not Maildir
 parsing or approval correctness; those have their own tests.
+
+## In progress, unreleased: X adapter and scoped autopost
+
+This work sits on top of v1.0 and is not a numbered release yet. It ships when
+the live canary passes (post, DM to self, metrics absent by design) and the
+owner has signed off.
+
+- **X provider** (`x`): mentions and DMs over a dedicated Chrome profile,
+  replies, DMs, and original posts, with constant selectors, a local seen
+  ledger, a sent ledger, verified sends, and hard stops on challenges. See
+  [ADR 0008](decisions/0008-x-browser-adapter.md).
+- **Scoped autopost** for original timeline posts only, with every rail
+  (double opt-in, kill switch, quiet hours, UTC daily cap, deterministic quality
+  floor). Replies and DMs still require approval. See
+  [ADR 0009](decisions/0009-scoped-autopost.md).
+- **Eval set grows to 45 cases** with three post cases; the rules engine scores
+  45/45. The historical 42-case numbers above describe the v1.0 baseline.
+- **`opencode` inference backend**: one-shot `opencode run --standalone
+  --model <id>` subprocess, no `--auto`, no server reverse-engineering.
+- **Not included:** post metrics (needs a new capability and ADR), scheduling,
+  threads, likes, follows, or delete.
 
 ## v1.1: IMAP, read-only
 

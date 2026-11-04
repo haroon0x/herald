@@ -24,6 +24,8 @@ Commands:
   history      Show recorded actions
   audit        Show the append-only audit log
   providers    List providers and their health
+  x            X adapter commands
+  autopost     Inspect or flip the scoped autopost lane
   config       Read configuration values
   model        Manage the model artifact
   eval         Score the checked-in command set against an engine
@@ -206,6 +208,30 @@ target:     check what is unread
   id: m-founder-1
 new:        2 recorded
 ```
+
+An original post goes to the timeline, not a conversation:
+
+```console
+$ herald ask 'Post exactly: "Shipping the X adapter today."' --provider x --enable-send
+provider:   x
+operation:  create_post
+target:     your timeline
+body:       Shipping the X adapter today.
+hash:       8c1d2f...
+
+Approval required
+action:     2b7e9f04-...
+provider:   x
+target:     your timeline
+thread:     timeline
+body:       Shipping the X adapter today.
+hash:       8c1d2f...
+```
+
+With the autopost lane fully enabled and every rail passing, the same command
+publishes and verifies instead of queuing (see `herald autopost status`).
+Otherwise it queues exactly like a reply. `timeline` identifies no recipient:
+a post never resolves to a person.
 
 A send that names no conversation fails closed:
 
@@ -471,10 +497,70 @@ PROVIDER   STATUS             DEFAULT  DETAIL
 fake       ready                       adapter available
 maildir    ready              *          adapter available
 gmail      planned                      no adapter in this build; plans are inert
-x          planned                      no adapter in this build; plans are inert
+x          not configured               adapter exists but is not configured; run `herald init`
 ```
 
+`health()` is a real check: for `x` it launches the browser and reads the home
+timeline, so it reports `not authenticated` until `herald x login` succeeds.
+
 `data`: `{"providers":[{"provider","status","detail","implemented","default"}]}`.
+
+### `herald x login`
+
+```text
+herald x login
+```
+
+Opens a **visible** Chrome window on the dedicated X profile, navigates to the
+login page, and waits (up to 10 minutes) for a signed-in home timeline. The user
+signs in. Herald does not read cookies, type credentials, or complete a
+challenge; if a captcha or account warning appears, the command reports it and
+stops.
+
+Requires an `[x]` section; without one it exits with `not_configured` and does
+not launch a browser.
+
+```console
+$ herald x login
+Opening a visible Chrome window on the dedicated X profile.
+profile:    /home/you/.local/share/herald/profiles/x
+Sign in yourself. Herald does not read cookies or type credentials.
+signed in: the X adapter can read this profile.
+```
+
+`data`: `{"status":"authenticated","provider":"x","profile":"..."}`.
+Exit code 8 (`timeout`) if no signed-in timeline appears.
+
+### `herald autopost`
+
+```text
+herald autopost status
+herald autopost off
+herald autopost on
+```
+
+`status` prints every rail and the effective send path. `off` writes the kill
+switch file `<data-dir>/autopost.disabled`; `on` removes it. Neither edits
+`config.toml`: configuration must also set `allow_autopost = true` and
+`allow_send = true`.
+
+```console
+$ herald autopost status
+Autopost
+configured:   off
+kill switch:  off
+quiet hours:  22:00-06:00 UTC (inactive)
+daily budget: 0/5 used today (UTC)
+remaining:    5 post(s)
+quality floor: 7/10
+send path:    approval only
+
+Everything still goes through the approval queue. Nothing autoposts.
+```
+
+`data`: `{"status","configured","kill_switch","quiet_hours","quiet_now",
+"daily_limit","used_today","remaining_today","min_quality","today_start_ms"}`.
+`off`/`on` emit `{"status","kill_switch","configured","path"}`.
 
 ### `herald config`
 

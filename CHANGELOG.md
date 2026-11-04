@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+In progress, not yet live-canaried. Treat these as implemented and unit-tested,
+not as released behaviour until the canary in the milestone handoff passes.
+
+### Added
+
+- **X provider** (`x`): reads mentions and DMs, replies, sends DMs, and creates
+  original posts through a dedicated Chrome profile driven by `chromiumoxide`.
+  Constant selectors only, thread-id validation before navigation, a bounded
+  seen ledger for unread, a sent ledger for idempotency, verified sends by exact
+  body match, and hard stops on login challenges, captchas, account warnings,
+  rate limits, and unexpected DOM. See
+  [ADR 0008](docs/decisions/0008-x-browser-adapter.md).
+- **Scoped autopost** for original timeline posts only: requires both
+  `allow_send` and `allow_autopost`, a clear kill-switch file, UTC quiet hours,
+  a daily UTC cap counting manual and autonomous posts, and a deterministic
+  quality floor. Any failing rail falls back to the approval queue. See
+  [ADR 0009](docs/decisions/0009-scoped-autopost.md).
+- **`herald autopost status|on|off`** and **`herald x login`** (visible window,
+  human sign-in, no cookie or credential access).
+- **`opencode` inference backend** (`opencode run --standalone`, one-shot,
+  never `--auto`) with a `doctor` version probe.
+- **`create_post` operation** with timeline target, deterministic post phrases,
+  policy rails, and three eval cases (45 total).
+
+### Changed
+
+- `ProviderId::X` is now implemented. `herald providers` performs a real
+  browser health check for `x` when `[x]` is configured.
+- Eval set grows from 42 to 45 cases; the rules engine scores 45/45.
+
+### Not included
+
+- Post metrics, scheduling, threads, likes, follows, and delete. Metrics in
+  particular need a new operation and an ADR; the seven-method provider surface
+  is unchanged.
+
 ## [1.0.0] - 2026-11-04
 
 The first stable release. Herald reads local mail, drafts with a local model,

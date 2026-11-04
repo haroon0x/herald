@@ -1,7 +1,8 @@
 # Herald documentation
 
 Start with the [README](../README.md) for the pitch and the demo. Come here for
-the contract, the reasoning, and the failure modes.
+the contract, the reasoning, and the failure modes. For an agent that needs to
+know where everything is, see [../index.md](../index.md) first.
 
 ## Reading order
 
@@ -47,9 +48,12 @@ contract.
 | [0005](decisions/0005-approval-queue-and-idempotency.md) | Durable approvals, client token, no blind retry | Accepted |
 | [0006](decisions/0006-inference-backends.md) | Managed sidecar by default, OpenAI-compatible escape hatch | Accepted |
 | [0007](decisions/0007-browser-automation.md) | No browser automation in v1; `chromiumoxide` is the documented alternative | Accepted |
+| [0008](decisions/0008-x-browser-adapter.md) | X adapter: `chromiumoxide`, dedicated profile, human sign-in, constant selectors | Accepted |
+| [0009](decisions/0009-scoped-autopost.md) | Scoped autopost: original timeline posts only, every rail must pass | Accepted |
 
 ## Project files
 
+- [index.md](../index.md): the repo map and working standards for agents.
 - [SECURITY.md](../SECURITY.md): how to report a vulnerability.
 - [CONTRIBUTING.md](../CONTRIBUTING.md): build, test, and review expectations.
 - [PRIVACY.md](../PRIVACY.md): what is stored, what leaves the machine.

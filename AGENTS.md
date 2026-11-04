@@ -1,5 +1,8 @@
 # Project rules
 
+Read [index.md](index.md) first — it is the repo map, the where-things-live
+table, and the working standards this file assumes.
+
 Herald is a local-first communication agent. It reads connected communication
 providers, summarizes and drafts with a local model, and only performs outbound
 actions after an explicit policy check and user approval.
@@ -14,12 +17,18 @@ actions after an explicit policy check and user approval.
   (`planned -> awaiting_approval -> executing -> succeeded | failed | uncertain`,
   plus `cancelled`). Every outbound action carries a client token. Never
   blind-retry an `uncertain` send; reconcile it with `find_sent`.
-- **Sending always requires confirmation.** Do not add auto-send. `allow_send`
-  only permits an approval to be created; `herald approve` is the only path to
-  the wire.
-- **No browser automation ships in v1.** If a browser adapter is ever added,
-  use a dedicated profile only: never the user's everyday Chrome profile, and
-  never extract cookies or passwords.
+- **Sending requires confirmation, with exactly one exception.** `allow_send`
+  permits an approval to be created; `herald approve` is the only path to the
+  wire — except the scoped autopost lane in [ADR 0009](docs/decisions/0009-scoped-autopost.md).
+  That lane covers original timeline posts only, requires `allow_autopost` and
+  every rail (kill switch, quiet hours, daily budget, quality floor), and never
+  applies to replies or DMs. Do not add auto-send anywhere else; widening the
+  lane is an ADR, not a flag.
+- **Browser automation exists only for the X adapter.** It runs on a dedicated
+  profile (never the user's everyday Chrome profile), the human signs in, and
+  Herald never reads cookies or credentials. Selectors and URLs stay constants
+  in `herald-provider/src/x.rs`; no selector, URL, or script ever reaches the
+  planner, and a challenge, captcha, or unexpected DOM is a hard stop.
 - **Inference stays local by default.** No message content leaves the machine
   unless the user explicitly configures a remote endpoint.
 - **Hard stop on surprises.** Login challenges, captchas, account warnings, or
@@ -38,9 +47,9 @@ actions after an explicit policy check and user approval.
 - Storage uses SQLite and minimal retention. Do not store full message bodies
   indefinitely. Approval bodies are deleted on decision or expiry.
 - New behavior needs a test that proves the safety property it relies on.
-- The fake/demo provider is a test harness, not a product provider. Maildir is
-  the first real provider; do not add a second real provider until it is
-  reliable and its safety tests pass.
+- The fake/demo provider is a test harness, not a product provider. Maildir and
+  the X adapter are the real providers; do not add a third until both are
+  reliable and their safety tests pass.
 
 ## Independence
 

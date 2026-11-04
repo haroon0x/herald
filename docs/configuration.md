@@ -121,7 +121,7 @@ typo such as `auto_send = true` fails at load instead of being ignored.
 
 | Key | Type | Default | Example | Notes |
 | --- | --- | --- | --- | --- |
-| `default_provider` | string | `"fake"` | `"maildir"` | One of `fake`, `maildir`, `gmail`, `x`. A planned provider cannot be the default: validation rejects it. |
+| `default_provider` | string | `"fake"` | `"maildir"` | One of `fake`, `maildir`, `gmail`, `x`. A planned provider cannot be the default: validation rejects it. `x` requires an `[x]` section. |
 
 ### `[policy]`
 
@@ -130,6 +130,10 @@ typo such as `auto_send = true` fails at load instead of being ignored.
 | `allow_send` | boolean | `false` | `true` | Enables the approval path for sends. Every send still needs `herald approve`. |
 | `max_body_chars` | integer | `8000` | `4000` | 1 to 1,000,000. Over the limit is a policy rejection, not a truncation. |
 | `approval_ttl_hours` | integer | `72` | `24` | 1 to 720. Expired approvals cannot be approved and their bodies are deleted. |
+| `allow_autopost` | boolean | `false` | `true` | Enables the scoped autopost lane. Requires `allow_send` and every rail: kill switch clear, outside quiet hours, budget remaining, quality floor met. Original timeline posts only; never replies or DMs. See [ADR 0009](decisions/0009-scoped-autopost.md). |
+| `autopost_daily_limit` | integer | `5` | `3` | 1 to 1000. Posts per UTC day, counting every `create_post` that reached approval or execution, manual and autonomous. |
+| `autopost_min_quality` | integer | `7` | `8` | 0 to 10. Deterministic quality floor for an autonomous post. Below the floor falls back to approval. |
+| `autopost_quiet_hours` | string | none | `"22:00-06:00"` | UTC window `"HH:MM-HH:MM"` with wrap-around. Start and end must differ. Inside the window nothing autoposts. |
 
 ### `[maildir]`
 
@@ -159,13 +163,29 @@ configured `password_env` that is missing from the environment is an error at
 provider construction, and the Maildir falls back to read-only with a warning.
 It is never a silent unauthenticated send.
 
+### `[x]`
+
+The whole table is optional. When it is present, the registry builds the X
+browser adapter. The profile is dedicated and must not be an everyday Chrome
+profile. See [providers.md](providers.md#x-browser-adapter) and
+[ADR 0008](decisions/0008-x-browser-adapter.md).
+
+| Key | Type | Default | Example | Notes |
+| --- | --- | --- | --- | --- |
+| `profile_dir` | path | `<data-dir>/profiles/x` | `"~/.local/share/herald/profiles/x"` | Dedicated Chrome profile. `~` is expanded. |
+| `handle` | string | none | `"@you"` | Display handle. Required for writes: verification needs it to attribute the posted message. |
+| `headless` | boolean | `true` | `false` | Normal commands run headless. `herald x login` overrides this and always shows a window. |
+| `action_delay_ms` | integer | `1800` | `2500` | Pause after opening a page, clicking, or submitting. |
+| `typing_delay_ms` | integer | `20` | `35` | Per-character delay while typing into a composer. |
+| `close_after` | boolean | `true` | `false` | Close the browser at the end of each operation. |
+
 ### `[model]`
 
 | Key | Type | Default | Example | Notes |
 | --- | --- | --- | --- | --- |
-| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`. |
+| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`, `opencode`. |
 | `endpoint` | string | none | `"http://127.0.0.1:11434/v1"` | Required for `openai`. Must be `http://` or `https://`. |
-| `model_name` | string | none | `"qwen3.5:0.8b"` | Required for `openai`. Sent as the `model` field. |
+| `model_name` | string | none | `"qwen3.5:0.8b"` | Required for `openai`; for `opencode` it is the model id (default `opencode/glm-5.3-flash-free`). |
 | `manifest` | path | `<data-dir>/models/manifest.json` | `"~/models/qwen.json"` | Used by `managed`. Relative paths resolve against the data directory. |
 | `api_key_env` | string | none | `"HERALD_MODEL_API_KEY"` | Optional bearer token for `openai`. Read from the environment. |
 | `context_size` | integer | `4096` | `8192` | Used by `managed`. Minimum 512. |
@@ -183,6 +203,16 @@ Overrides applied to the configuration:
 | --- | --- | --- |
 | `HERALD_PROVIDER` | `default_provider` | `maildir` |
 | `HERALD_ALLOW_SEND` | `policy.allow_send` | `true`, `1`, `yes`, `on` |
+| `HERALD_ALLOW_AUTOPOST` | `policy.allow_autopost` | `true`, `1`, `yes`, `on` |
+| `HERALD_AUTOPOST_DAILY_LIMIT` | `policy.autopost_daily_limit` | `5` |
+| `HERALD_AUTOPOST_MIN_QUALITY` | `policy.autopost_min_quality` | `7` |
+| `HERALD_AUTOPOST_QUIET_HOURS` | `policy.autopost_quiet_hours` | `22:00-06:00` |
+| `HERALD_X_PROFILE_DIR` | `x.profile_dir` | `/home/you/.local/share/herald/profiles/x` |
+| `HERALD_X_HANDLE` | `x.handle` | `@you` |
+| `HERALD_X_HEADLESS` | `x.headless` | `true` |
+| `HERALD_X_ACTION_DELAY_MS` | `x.action_delay_ms` | `1800` |
+| `HERALD_X_TYPING_DELAY_MS` | `x.typing_delay_ms` | `20` |
+| `HERALD_X_CLOSE_AFTER` | `x.close_after` | `true` |
 | `HERALD_MAILDIR_PATH` | `maildir.path` | `/home/you/Mail` |
 | `HERALD_SMTP_HOST` | `maildir.smtp.host` | `smtp.example.com` |
 | `HERALD_SMTP_PORT` | `maildir.smtp.port` | `587` |
@@ -200,6 +230,8 @@ Process and path variables:
 | `HERALD_CONFIG` | Config file path | Platform config dir | Must exist when set. |
 | `HERALD_SMTP_PASSWORD` | SMTP password | unset | The default name referenced by `password_env`. Any variable name works. |
 | `HERALD_LLAMA_SERVER` | Path to `llama-server` | `llama-server` on `PATH` | Used by the managed backend. |
+| `HERALD_OPENCODE_PATH` | Path to `opencode` | `opencode` on `PATH` | Used by the `opencode` backend. |
+| `CHROME` | Path to Chrome/Chromium | autodetected | Used by the X adapter. |
 | `HERALD_MODEL_URL` | Download base URL | manifest URL | For an internal mirror. The SHA-256 check still applies. |
 | `HERALD_MODEL_API_KEY` | Bearer token | unset | Only when `model.api_key_env` names it. |
 | `NO_COLOR` | Disable ANSI color | unset | Same as `--no-color`. |
@@ -341,6 +373,27 @@ model_name = "qwen3.5:0.8b"
 The endpoint can be remote. If it is not loopback, message content leaves the
 machine. `doctor` prints the endpoint so the choice is visible. Herald does not
 send anything to a Herald-operated service under any configuration.
+
+### X with the scoped autopost lane
+
+```toml
+default_provider = "x"
+
+[policy]
+allow_send = true
+allow_autopost = true
+autopost_daily_limit = 3
+autopost_min_quality = 7
+autopost_quiet_hours = "23:00-07:00"
+
+[x]
+handle = "@you"
+headless = true
+close_after = true
+```
+
+Run `herald x login` once. Posts still need every rail; everything else queues
+an approval exactly as before.
 
 ## Validation
 

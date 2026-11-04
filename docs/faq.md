@@ -222,11 +222,17 @@ of retrying the send. This hook only applies to the `fake` provider.
 
 ## Does Herald use a browser? Can I use Playwright?
 
-No. Herald talks to a Maildir on disk and SMTP, not to a web UI. That is a
-deliberate choice: a browser automation stack adds a second runtime, a driver,
-captcha and 2FA failures, and DOM churn to a program that can send mail as you.
-It also makes the safety properties much harder to test. See
-[ADR 0007](decisions/0007-browser-automation.md).
+Only for X. Mail is still a Maildir on disk plus SMTP. The X adapter drives a
+dedicated Chrome profile through `chromiumoxide` because X has no free API for
+this use case; it signs in once in a visible window, owns every selector, and
+stops on a challenge or unexpected page. That exception is recorded in
+[ADR 0008](decisions/0008-x-browser-adapter.md); the general reasoning against
+browser automation is in [ADR 0007](decisions/0007-browser-automation.md).
+
+Playwright itself is still not a dependency: it adds a Node runtime and a
+driver. `chromiumoxide` is the closest async Chrome DevTools Protocol client in
+Rust; `fantoccini` and `thirtyfour` are WebDriver clients; `headless_chrome` is
+the synchronous CDP option.
 
 If you want a Playwright-style API in Rust for a different project,
 `chromiumoxide` is the closest async Chrome DevTools Protocol client;

@@ -407,7 +407,7 @@ fn maildir_reads_and_refuses_to_send_without_smtp() {
         &config,
         format!(
             "default_provider = \"maildir\"\n\n[maildir]\npath = \"{}\"\nfrom = \"Me <me@example.com>\"\n",
-            root.display()
+            root.to_string_lossy().replace('\\', "/")
         ),
     )
     .unwrap();

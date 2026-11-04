@@ -172,6 +172,8 @@ pub fn write_template(path: &Path, force: bool) -> Result<(), ConfigError> {
 /// Warn when a configuration containing credentials is readable by other users.
 #[must_use]
 pub fn permission_warning(path: &Path) -> Option<String> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -189,6 +191,8 @@ pub fn permission_warning(path: &Path) -> Option<String> {
 }
 
 fn restrict_file(path: &Path) -> Result<(), ConfigError> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

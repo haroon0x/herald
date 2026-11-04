@@ -37,12 +37,19 @@ const OPERATIONS: [&str; 7] = [
 /// This also matches the grammar: the schema serialises `needs_clarification`
 /// before `operation`, so llama-server already constrains generation to that
 /// order. The prompt used to ask for the opposite order.
+///
+/// The two free-text fields come after the operation on purpose. Object keys
+/// serialise sorted, so a field named `clarification_question` would be
+/// generated *before* the flag and force the model to commit to a question
+/// string before it has decided whether to ask one. `question` sorts after
+/// `operation`, which keeps the measured decision sequence intact and only
+/// appends the phrase the model may improve.
 #[must_use]
 pub fn classifier_system() -> String {
     format!(
         r#"You classify one user request into exactly one messaging action.
 Decide clarification FIRST, then choose the operation. Answer ONLY this JSON:
-{{"needs_clarification": <true|false>, "operation": "<enum>"}}
+{{"needs_clarification": <true|false>, "operation": "<enum>", "question": "<string>", "target": "<phrase>"}}
 
 Set needs_clarification to true only when:
 1. an outbound message is requested but the text to send is not given
@@ -72,24 +79,38 @@ Enums and when to use them:
 - "list_unread_messages": check for new/unread/important items.
 - "list_recent_messages": show recent activity or latest messages.
 
+After the operation, fill in two strings:
+- "question": the one question you would ask, or "" when you are not asking.
+- "target": what the request is about, in a few of the user's own words
+  ("Summarize the latest email from the founder" -> "the latest email from the founder"),
+  or "" when it is about nothing in particular.
+Never put an id, handle, email address, or URL in "target": it is a phrase that
+is resolved against real messages later, and an unfindable phrase is refused.
+
 Allowed operation values: {OPERATIONS:?}"#,
     )
 }
 
-/// JSON schema the classifier grammar is constrained to: one boolean + one enum.
+/// JSON schema the classifier grammar is constrained to: one boolean, one enum,
+/// and two free-text fields.
 ///
 /// `serde_json` sorts object keys, so this serialises with `needs_clarification`
-/// before `operation`, and llama-server's grammar follows that order. Keep it
-/// aligned with [`classifier_system`]; a test asserts the two agree.
+/// first and `operation` second, and llama-server's grammar follows that order.
+/// The extras are named so they sort *after* the operation (`question`, then
+/// `target`): a phrase the model writes cannot then arrive before the decision
+/// it belongs to. Keep it aligned with [`classifier_system`]; a test asserts the
+/// two agree.
 #[must_use]
 pub fn classifier_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["needs_clarification", "operation"],
+        "required": ["needs_clarification", "operation", "question", "target"],
         "properties": {
             "needs_clarification": {"type": "boolean"},
-            "operation": {"type": "string", "enum": OPERATIONS}
+            "operation": {"type": "string", "enum": OPERATIONS},
+            "question": {"type": "string"},
+            "target": {"type": "string"}
         }
     })
 }
@@ -147,29 +168,61 @@ mod tests {
     #[test]
     fn classifier_prompt_asks_for_the_grammar_field_order() {
         let schema = classifier_schema().to_string();
-        let schema_flag = schema
-            .find("\"needs_clarification\"")
-            .expect("flag in schema");
-        let schema_operation = schema.find("\"operation\"").expect("operation in schema");
+        let order = ["needs_clarification", "operation", "question", "target"];
+        let positions = order.map(|field| {
+            schema
+                .find(&format!("\"{field}\""))
+                .unwrap_or_else(|| panic!("{field} in schema"))
+        });
         assert!(
-            schema_flag < schema_operation,
-            "schema should serialise needs_clarification before operation"
+            positions.is_sorted(),
+            "schema should serialise {order:?} in that order, got {positions:?}"
         );
 
         let prompt = classifier_system();
         // Guards the `format!` escaping as well as the order: doubled braces must
         // render as a single JSON object the model can copy.
         assert!(
-            prompt.contains(r#"{"needs_clarification": <true|false>, "operation": "<enum>"}"#),
+            prompt.contains(
+                r#"{"needs_clarification": <true|false>, "operation": "<enum>", "question": "<string>", "target": "<phrase>"}"#
+            ),
             "prompt should show the flag-first JSON shape verbatim"
         );
-        let prompt_flag = prompt
-            .find("\"needs_clarification\"")
-            .expect("flag in prompt");
-        let prompt_operation = prompt.find("\"operation\"").expect("operation in prompt");
+        let prompt_positions = order.map(|field| {
+            prompt
+                .find(&format!("\"{field}\""))
+                .unwrap_or_else(|| panic!("{field} in prompt"))
+        });
         assert!(
-            prompt_flag < prompt_operation,
-            "prompt should ask for needs_clarification before operation"
+            prompt_positions.is_sorted(),
+            "prompt should ask for {order:?} in that order, got {prompt_positions:?}"
         );
+    }
+
+    /// The 2/10 ladder step added exactly two fields, and both stay optional in
+    /// meaning: empty means "the model said nothing useful" and the planner falls
+    /// back. The grammar still has to require them so the model cannot skip them
+    /// and leave the parse guessing.
+    #[test]
+    fn classifier_schema_declares_the_two_extra_string_fields() {
+        let schema = classifier_schema();
+        let required = schema["required"]
+            .as_array()
+            .expect("required present")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            required,
+            ["needs_clarification", "operation", "question", "target"]
+        );
+        assert_eq!(schema["additionalProperties"], Value::Bool(false));
+        for field in ["question", "target"] {
+            assert_eq!(
+                schema["properties"][field]["type"],
+                Value::String("string".to_string()),
+                "{field} should be a string"
+            );
+        }
     }
 }

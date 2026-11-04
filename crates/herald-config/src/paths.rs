@@ -1,3 +1,5 @@
+//! Path resolution: tilde expansion and the data/config/XDG directories.
+
 use std::path::{Component, Path, PathBuf};
 
 use directories::{BaseDirs, ProjectDirs};

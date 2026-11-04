@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 pub use model::{
     Config, MaildirSettings, ModelBackend, ModelSettings, PolicySettings, SmtpSecurity,
-    SmtpSettings,
+    SmtpSettings, XSettings, quiet_hours_active,
 };
 pub use paths::{default_config_path, default_data_dir, ensure_private_dir, expand_tilde};
 pub use template::TEMPLATE;

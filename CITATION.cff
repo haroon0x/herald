@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use Herald in research or a product, please cite it as below."
+type: software
+title: "Herald: a local-first communication agent"
+abstract: >-
+  Herald is a local-first communication agent written in Rust. It reads
+  connected communication providers, summarizes and drafts with a local model,
+  and performs outbound actions only after an explicit policy check and a
+  human approval. The model emits a typed plan; Rust validates, authorizes, and
+  executes it, and every write is idempotent and reconciled when its outcome is
+  uncertain. Herald ships a deterministic fake provider and a Maildir provider
+  with SMTP submission, stores state in local SQLite, and keeps inference local
+  by default.
+authors:
+  - name: "Herald contributors"
+  - name: "haroon0x"
+    website: "https://github.com/haroon0x"
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/haroon0x/herald"
+url: "https://github.com/haroon0x/herald"
+version: 1.0.0
+date-released: "2026-11-04"
+keywords:
+  - local-first
+  - email
+  - maildir
+  - ai-agent
+  - rust
+  - human-in-the-loop

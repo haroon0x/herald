@@ -1,0 +1,17 @@
+# Herald maintainers. The broad rule comes first; specific paths below take
+# precedence because GitHub uses the last matching pattern.
+
+* @haroon0x
+
+# Security-sensitive: typed actions, policy, prompts, state machine.
+/crates/herald-core/ @haroon0x
+
+# Security-sensitive: credentials, SMTP, provider boundaries.
+/crates/herald-provider/ @haroon0x
+
+# Security-sensitive: persisted approvals, message metadata, audit log.
+/crates/herald-storage/ @haroon0x
+
+# Security-sensitive: release and CI trust (tokens, signing, artifacts).
+/.github/workflows/ @haroon0x
+/.github/CODEOWNERS @haroon0x

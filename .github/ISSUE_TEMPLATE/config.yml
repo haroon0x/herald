@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, ideas, and show-and-tell
+    url: https://github.com/haroon0x/herald/discussions
+    about: Ask usage questions and discuss ideas with the community. Please do not file these as issues.
+  - name: Report a security vulnerability
+    url: https://github.com/haroon0x/herald/security/advisories/new
+    about: Report vulnerabilities privately. Never open a public issue for a security problem.

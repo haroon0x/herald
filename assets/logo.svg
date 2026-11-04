@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160" role="img" aria-labelledby="herald-logo-title herald-logo-desc">
+  <title id="herald-logo-title">Herald logo</title>
+  <desc id="herald-logo-desc">The amber Herald shield mark beside the lowercase wordmark herald and the tagline local-first communication agent.</desc>
+  <rect width="640" height="160" rx="16" fill="#0B0F14"/>
+  <g transform="translate(92 12) scale(0.53125)" aria-hidden="true">
+    <path fill="#F5B942" fill-rule="evenodd" d="M72 40 H184 A24 24 0 0 1 208 64 V144 C208 176 190 200 164 218 L128 174 L92 218 C66 200 48 176 48 144 V64 A24 24 0 0 1 72 40 Z M82 70 H108 V102 C112 96 120 94 128 94 C136 94 144 96 148 102 V70 H174 V154 H148 V128 C144 122 136 120 128 120 C120 120 112 122 108 128 V154 H82 Z"/>
+  </g>
+  <text x="240" y="96" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="88" font-weight="600" letter-spacing="-3" fill="#EDE7DA">herald</text>
+  <text x="242" y="126" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="11" font-weight="500" letter-spacing="2.4" fill="#8A97A8">LOCAL-FIRST COMMUNICATION AGENT</text>
+</svg>

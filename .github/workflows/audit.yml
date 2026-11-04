@@ -1,0 +1,31 @@
+name: Security audit
+
+on:
+  push:
+    paths:
+      - Cargo.lock
+      - .github/workflows/audit.yml
+  schedule:
+    # Mondays at 06:17 UTC. The offset keeps the job off the top of the hour.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # rustsec/audit-check opens an issue when it finds a vulnerability.
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Audit dependencies
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

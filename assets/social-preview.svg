@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="herald-social-title herald-social-desc">
+  <title id="herald-social-title">Herald — local-first communication agent</title>
+  <desc id="herald-social-desc">Social preview card with the amber Herald shield mark, the wordmark herald, and the promise: Read your mail. Draft locally. Send only when you say so.</desc>
+  <defs>
+    <pattern id="herald-social-grid" width="160" height="160" patternUnits="userSpaceOnUse">
+      <path d="M0 0 H160 M0 0 V160" fill="none" stroke="#8A97A8" stroke-opacity="0.075" stroke-width="1"/>
+      <path d="M40 0 V160 M80 0 V160 M120 0 V160 M0 40 H160 M0 80 H160 M0 120 H160" fill="none" stroke="#8A97A8" stroke-opacity="0.038" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="herald-social-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F5B942" stop-opacity="0.12"/>
+      <stop offset="0.55" stop-color="#F5B942" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#F5B942" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="herald-social-clip">
+      <rect width="1280" height="640"/>
+    </clipPath>
+  </defs>
+  <rect width="1280" height="640" fill="#0B0F14"/>
+  <g clip-path="url(#herald-social-clip)" aria-hidden="true">
+    <rect width="1280" height="640" fill="url(#herald-social-grid)"/>
+    <circle cx="200" cy="320" r="460" fill="url(#herald-social-glow)"/>
+    <g fill="none" stroke="#F5B942" stroke-opacity="0.06" stroke-width="1">
+      <circle cx="200" cy="320" r="112"/>
+      <circle cx="200" cy="320" r="172"/>
+      <circle cx="200" cy="320" r="232"/>
+      <circle cx="200" cy="320" r="292"/>
+      <circle cx="200" cy="320" r="352"/>
+      <circle cx="200" cy="320" r="412"/>
+      <circle cx="200" cy="320" r="472"/>
+      <circle cx="200" cy="320" r="532"/>
+      <circle cx="200" cy="320" r="592"/>
+      <circle cx="200" cy="320" r="652"/>
+    </g>
+  </g>
+  <g transform="translate(0 120)">
+    <g transform="translate(88 66) scale(0.96875)" aria-hidden="true">
+      <path fill="#F5B942" fill-rule="evenodd" d="M72 40 H184 A24 24 0 0 1 208 64 V144 C208 176 190 200 164 218 L128 174 L92 218 C66 200 48 176 48 144 V64 A24 24 0 0 1 72 40 Z M82 70 H108 V102 C112 96 120 94 128 94 C136 94 144 96 148 102 V70 H174 V154 H148 V128 C144 122 136 120 128 120 C120 120 112 122 108 128 V154 H82 Z"/>
+    </g>
+    <text x="352" y="186" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="108" font-weight="600" letter-spacing="-4" fill="#EDE7DA">herald</text>
+    <text x="354" y="222" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="500" letter-spacing="3" fill="#8A97A8">LOCAL-FIRST COMMUNICATION AGENT</text>
+    <text x="352" y="302" font-family="Inter, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="400" fill="#EDE7DA">Read your mail. Draft locally. <tspan fill="#F5B942">Send only when you say so.</tspan></text>
+  </g>
+</svg>

@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="herald-architecture-title herald-architecture-desc">
+  <title id="herald-architecture-title">Herald architecture: typed plans, one approval gate</title>
+  <desc id="herald-architecture-desc">A CLI instruction flows through a rules router or a grammar-constrained local classifier into ActionPlan JSON, then validation and policy. Reads and drafts run in an execution loop against a provider port; sends wait for human approval before send_reply and receipt verification. SQLite stores metadata, actions, approvals and audit events, while local inference stays behind the model-never-executes boundary.</desc>
+  <defs>
+    <pattern id="herald-arch-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M0 0 H40 M0 0 V40" fill="none" stroke="#8A97A8" stroke-opacity="0.04" stroke-width="1"/>
+      <path d="M8 0 V40 M16 0 V40 M24 0 V40 M32 0 V40 M0 8 H40 M0 16 H40 M0 24 H40 M0 32 H40" fill="none" stroke="#8A97A8" stroke-opacity="0.016" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="herald-arch-glow" gradientUnits="userSpaceOnUse" cx="620" cy="150" r="540">
+      <stop offset="0" stop-color="#F5B942" stop-opacity="0.07"/>
+      <stop offset="0.55" stop-color="#F5B942" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#F5B942" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="herald-arch-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#8A97A8"/>
+    </marker>
+    <marker id="herald-arch-arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#F5B942"/>
+    </marker>
+    <marker id="herald-arch-arrow-success" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#5FD3A6"/>
+    </marker>
+    <marker id="herald-arch-arrow-success-sm" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#5FD3A6"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="760" fill="#0B0F14"/>
+  <rect width="1200" height="760" fill="url(#herald-arch-grid)"/>
+  <rect width="1200" height="760" fill="url(#herald-arch-glow)"/>
+
+  <!-- Header -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="40" y="34" font-size="9" font-weight="600" letter-spacing="2.1" fill="#F5B942">HERALD · ARCHITECTURE</text>
+    <text x="40" y="62" font-size="22" font-weight="600" letter-spacing="-0.4" fill="#EDE7DA">One typed action at a time</text>
+    <text x="40" y="80" font-size="11" font-weight="400" fill="#8A97A8">The model plans. Rust validates, authorizes and executes. A human approves every send.</text>
+    <text x="1160" y="34" font-size="9" font-weight="500" letter-spacing="1.6" fill="#5E6C7E" text-anchor="end">V1 · LOCAL-FIRST</text>
+  </g>
+
+  <!-- Trust boundary: approval gate -->
+  <rect x="856" y="202" width="192" height="192" rx="16" fill="none" stroke="#F5B942" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <rect x="858" y="200" width="122" height="15" fill="#0B0F14"/>
+  <text x="864" y="212" font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif" font-size="10" font-weight="600" letter-spacing="0.2" fill="#F5B942">human approval gate</text>
+
+  <!-- Panels: containers sit behind connectors; nodes sit above them -->
+  <g>
+    <!-- SQLite storage -->
+    <rect x="40" y="412" width="288" height="180" rx="16" fill="#121821" stroke="#202B3A" stroke-width="1"/>
+    <!-- provider port -->
+    <rect x="360" y="412" width="470" height="180" rx="16" fill="#121821" stroke="#202B3A" stroke-width="1"/>
+    <!-- inference -->
+    <rect x="852" y="412" width="308" height="180" rx="16" fill="#121821" stroke="#202B3A" stroke-width="1"/>
+    <!-- state machine strip -->
+    <rect x="40" y="604" width="1120" height="120" rx="16" fill="#0E141C" stroke="#1E2836" stroke-width="1"/>
+  </g>
+
+  <!-- Edges: drawn before boxes -->
+  <g fill="none" stroke="#8A97A8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- CLI to rules router -->
+    <path d="M188 130 H236" marker-end="url(#herald-arch-arrow)"/>
+    <!-- rules match to ActionPlan -->
+    <path d="M412 136 H464" marker-end="url(#herald-arch-arrow)"/>
+    <!-- rules miss to classifier -->
+    <path d="M300 156 V180" marker-end="url(#herald-arch-arrow)"/>
+    <!-- classifier to ActionPlan -->
+    <path d="M412 204 H432 Q440 204 440 196 V180 Q440 172 448 172 H464" marker-end="url(#herald-arch-arrow)"/>
+    <!-- ActionPlan to validate -->
+    <path d="M616 150 H632 Q640 150 640 142 V134 Q640 126 648 126 H664" marker-end="url(#herald-arch-arrow)"/>
+    <!-- validate to authorize -->
+    <path d="M832 126 H864" marker-end="url(#herald-arch-arrow)"/>
+    <!-- authorize to read/draft execution loop -->
+    <path d="M896 152 V186 Q896 194 888 194 H708 Q700 194 700 202 V268" marker-end="url(#herald-arch-arrow)"/>
+    <!-- authorize to pending approval -->
+    <path d="M1000 152 V218" marker-end="url(#herald-arch-arrow)"/>
+    <!-- pending approval to human approve -->
+    <path d="M952 304 V326" marker-end="url(#herald-arch-arrow)"/>
+    <!-- human approve to send -->
+    <path d="M1032 352 H1056" marker-end="url(#herald-arch-arrow-amber)"/>
+    <!-- send into provider port -->
+    <path d="M1104 370 V396 Q1104 404 1096 404 H808 Q800 404 800 412" stroke="#F5B942" marker-end="url(#herald-arch-arrow-amber)"/>
+    <!-- execution loop calls provider -->
+    <path d="M660 332 V412" marker-end="url(#herald-arch-arrow)"/>
+    <!-- find_sent returns a receipt -->
+    <path d="M460 542 V552" stroke="#5FD3A6" stroke-width="1.2" marker-end="url(#herald-arch-arrow-success-sm)"/>
+  </g>
+
+  <!-- State machine transitions -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#8A97A8" stroke-width="1.3">
+      <path d="M280 623 H304" marker-end="url(#herald-arch-arrow)"/>
+      <path d="M440 623 H468" marker-end="url(#herald-arch-arrow)"/>
+      <path d="M552 616 H596" marker-end="url(#herald-arch-arrow)"/>
+      <path d="M510 636 V653 Q510 661 518 661 H596" marker-end="url(#herald-arch-arrow)"/>
+      <path d="M480 636 V691 Q480 699 488 699 H596" marker-end="url(#herald-arch-arrow)"/>
+    </g>
+    <g stroke="#8A97A8" stroke-width="1.1" stroke-dasharray="4 3">
+      <path d="M240 636 V686" marker-end="url(#herald-arch-arrow)"/>
+      <path d="M372 636 V691 Q372 699 364 699 H290" marker-end="url(#herald-arch-arrow)"/>
+    </g>
+    <path d="M686 699 H800" stroke="#5FD3A6" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#herald-arch-arrow-success)"/>
+  </g>
+
+  <!-- Edge labels -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif" font-size="10">
+    <rect x="760" y="174" width="76" height="14" fill="#0B0F14"/>
+    <text x="798" y="186" fill="#8A97A8" text-anchor="middle">read / draft</text>
+
+    <rect x="1006" y="176" width="34" height="14" fill="#0B0F14"/>
+    <text x="1012" y="188" fill="#8A97A8">send</text>
+
+    <rect x="306" y="159" width="76" height="14" fill="#0B0F14"/>
+    <text x="312" y="171" fill="#8A97A8">if rules miss</text>
+
+    <rect x="958" y="306" width="54" height="14" fill="#0B0F14"/>
+    <text x="964" y="318" fill="#8A97A8">approve</text>
+
+    <rect x="670" y="366" width="78" height="14" fill="#0B0F14"/>
+    <text x="676" y="378" fill="#8A97A8">provider call</text>
+
+    <rect x="246" y="650" width="50" height="13" fill="#0E141C"/>
+    <text x="252" y="661" fill="#8A97A8">withdraw</text>
+
+    <rect x="384" y="660" width="86" height="13" fill="#0E141C"/>
+    <text x="390" y="671" fill="#8A97A8">reject / expiry</text>
+
+    <rect x="710" y="679" width="56" height="13" fill="#0E141C"/>
+    <text x="738" y="690" fill="#5FD3A6" text-anchor="middle">reconcile</text>
+  </g>
+
+  <!-- Trust annotations -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif" font-size="10" font-weight="600">
+    <rect x="368" y="394" width="3" height="12" rx="1.5" fill="#F5B942"/>
+    <text x="376" y="404" fill="#F5B942">untrusted message content</text>
+
+    <text x="1056" y="316" fill="#FF6B6B" font-size="9.5">no auto-send</text>
+
+    <text x="800" y="674" fill="#F5B942">uncertain is reconciled, never retried</text>
+  </g>
+
+  <!-- SQLite panel -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="56" y="442" font-size="12.5" font-weight="600" fill="#EDE7DA">SQLite</text>
+    <text x="56" y="457" font-size="9.5" font-weight="400" fill="#8A97A8">schema v2 · WAL · one file</text>
+
+    <g font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#A9B5C4">
+      <rect x="56" y="470" width="132" height="34" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+      <text x="66" y="491">messages</text>
+      <rect x="196" y="470" width="132" height="34" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+      <text x="206" y="491">actions</text>
+      <rect x="56" y="512" width="132" height="34" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+      <text x="66" y="533">pending_approvals</text>
+      <rect x="196" y="512" width="132" height="34" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+      <text x="206" y="533">audit_events</text>
+    </g>
+
+    <text x="56" y="568" font-size="10" font-weight="500" fill="#F5B942">body deleted on decision/expiry</text>
+    <text x="56" y="584" font-size="9.5" font-weight="400" fill="#8A97A8">metadata only · no full message bodies</text>
+  </g>
+
+  <!-- Provider port panel -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="376" y="442" font-size="12.5" font-weight="600" fill="#EDE7DA">CommunicationProvider</text>
+    <text x="376" y="457" font-size="9.5" font-weight="400" fill="#8A97A8">capability port · seven methods</text>
+
+    <rect x="376" y="466" width="168" height="36" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="388" y="482" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#EDE7DA">send_reply</text>
+    <text x="388" y="495" font-size="9.5" fill="#8A97A8">idempotent · client token</text>
+
+    <rect x="376" y="506" width="168" height="36" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="388" y="522" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#EDE7DA">find_sent</text>
+    <text x="388" y="535" font-size="9.5" fill="#8A97A8">sent verification</text>
+
+    <rect x="376" y="552" width="168" height="32" rx="8" fill="#0F1B19" stroke="#5FD3A6" stroke-opacity="0.6" stroke-width="1"/>
+    <text x="388" y="566" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#5FD3A6">ExecutionReceipt</text>
+    <text x="388" y="578" font-size="9.5" fill="#A9B5C4">verified · hash · thread</text>
+
+    <rect x="568" y="466" width="246" height="44" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="582" y="485" font-size="11.5" font-weight="600" fill="#EDE7DA">fake (demo)</text>
+    <text x="582" y="499" font-size="9.5" fill="#8A97A8">seeded inbox · in-memory send</text>
+
+    <rect x="568" y="518" width="246" height="44" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="582" y="537" font-size="11.5" font-weight="600" fill="#EDE7DA">maildir + SMTP</text>
+    <text x="582" y="551" font-size="9.5" fill="#8A97A8">local files · SMTP submission</text>
+
+    <text x="568" y="580" font-size="9" fill="#5E6C7E">adapters implement the port</text>
+  </g>
+
+  <!-- Inference panel -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="868" y="442" font-size="12.5" font-weight="600" fill="#EDE7DA">Inference</text>
+    <text x="868" y="457" font-size="9.5" font-weight="400" fill="#8A97A8">local by default · opt-in endpoint</text>
+
+    <rect x="868" y="470" width="276" height="42" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="882" y="487" font-size="11.5" font-weight="600" fill="#EDE7DA">managed llama-server (loopback)</text>
+    <text x="882" y="501" font-size="9.5" fill="#8A97A8">grammar-constrained JSON · default</text>
+
+    <rect x="868" y="520" width="276" height="42" rx="8" fill="#151D27" stroke="#273345" stroke-width="1"/>
+    <text x="882" y="537" font-size="11.5" font-weight="600" fill="#EDE7DA">OpenAI-compatible local endpoint</text>
+    <text x="882" y="551" font-size="9.5" fill="#8A97A8">Ollama / LM Studio / vLLM</text>
+
+    <text x="868" y="576" font-size="10" font-weight="600" fill="#F5B942">model never executes</text>
+    <text x="868" y="588" font-size="9" fill="#8A97A8">it never calls a provider</text>
+  </g>
+
+  <!-- CLI -->
+  <rect x="40" y="104" width="148" height="164" rx="14" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="56" y="128" font-size="12.5" font-weight="600" fill="#EDE7DA">user / CLI</text>
+    <text x="56" y="143" font-size="9" fill="#8A97A8">one local binary</text>
+    <path d="M56 151 H172" stroke="#273345" stroke-width="1"/>
+    <g font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#EDE7DA">
+      <text x="56" y="170"><tspan fill="#F5B942">›</tspan> ask</text>
+      <text x="56" y="186"><tspan fill="#F5B942">›</tspan> plan</text>
+      <text x="56" y="202"><tspan fill="#F5B942">›</tspan> approvals</text>
+      <text x="56" y="218"><tspan fill="#F5B942">›</tspan> approve</text>
+      <text x="56" y="234"><tspan fill="#F5B942">›</tspan> reconcile</text>
+    </g>
+    <text x="56" y="256" font-size="9" fill="#8A97A8">explicit approval</text>
+  </g>
+
+  <!-- Planner tier -->
+  <rect x="236" y="104" width="176" height="52" rx="12" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="252" y="126" font-size="12.5" font-weight="600" fill="#EDE7DA">rules router</text>
+    <text x="252" y="142" font-size="9.5" fill="#8A97A8">tier 0 · deterministic</text>
+  </g>
+
+  <rect x="236" y="180" width="176" height="64" rx="12" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="252" y="204" font-size="12.5" font-weight="600" fill="#EDE7DA">local classifier</text>
+    <text x="252" y="220" font-size="9" fill="#8A97A8">(grammar JSON) · tier 1</text>
+    <text x="252" y="234" font-size="9" fill="#5E6C7E">7 operations + clarify flag</text>
+  </g>
+
+  <rect x="464" y="120" width="152" height="72" rx="12" fill="#151D27" stroke="#F5B942" stroke-opacity="0.65" stroke-width="1.2"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="480" y="144" font-size="12.5" font-weight="600" fill="#EDE7DA">ActionPlan JSON</text>
+    <text x="480" y="161" font-size="9" fill="#8A97A8">closed enums</text>
+    <text x="480" y="176" font-size="9" fill="#8A97A8">deny_unknown_fields</text>
+  </g>
+
+  <!-- Gate -->
+  <rect x="664" y="102" width="168" height="48" rx="12" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="680" y="123" font-size="12.5" font-weight="600" fill="#EDE7DA">validate_plan</text>
+    <text x="680" y="139" font-size="9.5" fill="#8A97A8">→ typed Action</text>
+  </g>
+
+  <rect x="864" y="100" width="176" height="52" rx="12" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="880" y="122" font-size="12.5" font-weight="600" fill="#EDE7DA">authorize</text>
+    <text x="880" y="138" font-size="9.5" fill="#8A97A8">policy · fail closed</text>
+  </g>
+
+  <!-- Execution loop -->
+  <rect x="620" y="268" width="180" height="64" rx="14" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="636" y="292" font-size="12.5" font-weight="600" fill="#EDE7DA">execution loop</text>
+    <text x="636" y="308" font-size="9.5" fill="#8A97A8">resolve target · read · draft</text>
+    <text x="636" y="322" font-size="9" fill="#5E6C7E">writes stay idempotent</text>
+  </g>
+
+  <!-- Pending approval -->
+  <rect x="872" y="218" width="160" height="86" rx="12" fill="#151D27" stroke="#F5B942" stroke-opacity="0.75" stroke-width="1.2"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="888" y="242" font-size="12" font-weight="600" fill="#EDE7DA">pending approval</text>
+    <g font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#A9B5C4">
+      <text x="888" y="262">body + SHA-256</text>
+      <text x="888" y="278">resolved thread</text>
+      <text x="888" y="294">expires in 72h</text>
+    </g>
+  </g>
+
+  <!-- Human approve -->
+  <rect x="872" y="326" width="160" height="44" rx="12" fill="#151D27" stroke="#F5B942" stroke-opacity="0.75" stroke-width="1.2"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="888" y="347" font-size="12.5" font-weight="600" fill="#EDE7DA">human approve</text>
+    <text x="888" y="362" font-size="9" fill="#8A97A8">herald approve &lt;id&gt;</text>
+  </g>
+
+  <!-- Send -->
+  <rect x="1056" y="326" width="96" height="44" rx="12" fill="#151D27" stroke="#F5B942" stroke-opacity="0.75" stroke-width="1.2"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="1072" y="347" font-size="12.5" font-weight="600" fill="#EDE7DA">send</text>
+    <text x="1072" y="362" font-size="9" fill="#8A97A8">send_reply</text>
+  </g>
+
+  <!-- State machine strip -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif">
+    <text x="56" y="624" font-size="11" font-weight="600" fill="#EDE7DA">action state machine</text>
+    <text x="56" y="640" font-size="9.5" fill="#8A97A8">enforced by storage</text>
+  </g>
+
+  <g font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" text-anchor="middle">
+    <rect x="200" y="610" width="80" height="26" rx="13" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+    <text x="240" y="627" fill="#EDE7DA">planned</text>
+
+    <rect x="304" y="610" width="136" height="26" rx="13" fill="#151D27" stroke="#F5B942" stroke-opacity="0.75" stroke-width="1.1"/>
+    <text x="372" y="627" fill="#EDE7DA">awaiting_approval</text>
+
+    <rect x="468" y="610" width="84" height="26" rx="13" fill="#151D27" stroke="#2A3647" stroke-width="1"/>
+    <text x="510" y="627" fill="#EDE7DA">executing</text>
+
+    <rect x="596" y="610" width="90" height="26" rx="13" fill="#101B18" stroke="#5FD3A6" stroke-width="1.1"/>
+    <text x="641" y="627" fill="#5FD3A6">succeeded</text>
+
+    <rect x="596" y="648" width="90" height="26" rx="13" fill="#1A1316" stroke="#FF6B6B" stroke-width="1.1"/>
+    <text x="641" y="665" fill="#FF6B6B">failed</text>
+
+    <rect x="596" y="686" width="90" height="26" rx="13" fill="#1A1710" stroke="#F5B942" stroke-width="1.1"/>
+    <text x="641" y="703" fill="#F5B942">uncertain</text>
+
+    <rect x="200" y="686" width="90" height="26" rx="13" fill="#151D27" stroke="#3A4658" stroke-width="1"/>
+    <text x="245" y="703" fill="#8A97A8">cancelled</text>
+  </g>
+
+  <!-- Reconcile outcome -->
+  <rect x="800" y="682" width="140" height="28" rx="10" fill="#0F1B19" stroke="#5FD3A6" stroke-opacity="0.7" stroke-width="1" stroke-dasharray="4 3"/>
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif" text-anchor="middle">
+    <text x="870" y="695" font-size="11" font-weight="600" fill="#EDE7DA">succeeded / failed</text>
+    <text x="870" y="706" font-size="9.5" fill="#8A97A8">find_sent · no resend</text>
+  </g>
+
+  <!-- Legend -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif" font-size="10" fill="#8A97A8">
+    <path d="M56 744 H82" fill="none" stroke="#8A97A8" stroke-width="1.3" marker-end="url(#herald-arch-arrow)"/>
+    <text x="90" y="748">flow</text>
+    <path d="M136 744 H162" fill="none" stroke="#8A97A8" stroke-width="1.1" stroke-dasharray="4 3"/>
+    <text x="170" y="748">reconcile / cancel</text>
+    <rect x="300" y="736" width="3" height="12" rx="1.5" fill="#F5B942"/>
+    <text x="310" y="748">trust boundary</text>
+  </g>
+</svg>

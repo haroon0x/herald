@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="herald-demo-title herald-demo-desc">
+  <title id="herald-demo-title">Herald demo: read, ask to send, approve</title>
+  <desc id="herald-demo-desc">A terminal session in which Herald lists two unread messages, prepares an outbound reply as a pending approval with the resolved target and exact body, and sends only after herald approve, ending with: Nothing is sent before approval.</desc>
+  <defs>
+    <pattern id="herald-demo-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#8A97A8" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="herald-demo-glow" gradientUnits="userSpaceOnUse" cx="720" cy="110" r="390">
+      <stop offset="0" stop-color="#F5B942" stop-opacity="0.09"/>
+      <stop offset="0.6" stop-color="#F5B942" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#F5B942" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="900" height="520" fill="#0B0F14"/>
+  <rect width="900" height="520" fill="url(#herald-demo-grid)"/>
+  <rect width="900" height="520" fill="url(#herald-demo-glow)"/>
+
+  <!-- Window -->
+  <rect x="20" y="20" width="860" height="480" rx="16" fill="#0D141D" stroke="#283445" stroke-width="1"/>
+  <path d="M36 20 H864 A16 16 0 0 1 880 36 V64 H20 V36 A16 16 0 0 1 36 20 Z" fill="#121A24"/>
+  <path d="M20 64 H880" stroke="#243041" stroke-width="1"/>
+
+  <g aria-hidden="true">
+    <circle cx="44" cy="42" r="5" fill="#F5B942"/>
+    <circle cx="62" cy="42" r="5" fill="#3A4658"/>
+    <circle cx="80" cy="42" r="5" fill="#3A4658"/>
+  </g>
+
+  <text x="100" y="46" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#8A97A8">herald — zsh</text>
+  <text x="856" y="46" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" letter-spacing="1.2" fill="#5E6C7E" text-anchor="end">local</text>
+
+  <!-- Session: xml:space and explicit x positions keep the terminal columns aligned in browsers -->
+  <g font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" xml:space="preserve">
+    <text x="64" y="104" fill="#F5B942">$<tspan fill="#EDE7DA"> herald ask "check what's unread"</tspan></text>
+
+    <text x="64" y="136" fill="#EDE7DA">* Alex Founder   <tspan x="227.9">Interview next steps   </tspan><tspan x="449.6" fill="#8A97A8">[t-founder]</tspan></text>
+
+    <text x="64" y="168" fill="#8A97A8">new: 2 recorded</text>
+
+    <text x="64" y="200" fill="#F5B942">$<tspan fill="#EDE7DA"> herald ask 'Send exactly: "Thanks!" to the founder' --enable-send</tspan></text>
+
+    <text x="64" y="232" fill="#8A97A8">decision:<tspan fill="#F5B942"> awaiting approval</tspan></text>
+
+    <text x="64" y="264" fill="#8A97A8">target:   <tspan x="160.4" fill="#EDE7DA">latest message from the founder</tspan></text>
+
+    <text x="64" y="296" fill="#8A97A8">body:     <tspan x="160.4" fill="#EDE7DA">Thanks!</tspan></text>
+
+    <text x="64" y="328" fill="#F5B942">$<tspan fill="#EDE7DA"> herald approve 7c1e4d2a</tspan></text>
+
+    <text x="64" y="360" fill="#8A97A8">status:   <tspan x="160.4" fill="#5FD3A6">sent</tspan></text>
+
+    <text x="64" y="392" fill="#8A97A8">detail:   <tspan x="160.4" fill="#EDE7DA">sent and verified as </tspan><tspan x="362.9" fill="#5FD3A6">m-sent-7c1e4d2a</tspan></text>
+  </g>
+
+  <path d="M64 416 H836" stroke="#1E2836" stroke-width="1"/>
+  <rect x="48" y="432" width="2.5" height="15" rx="1.25" fill="#F5B942"/>
+  <text x="64" y="445" font-family="'DejaVu Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" fill="#EDE7DA">Nothing is sent before approval.</text>
+</svg>

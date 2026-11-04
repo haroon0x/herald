@@ -1,0 +1,74 @@
+name: Feature request
+description: Propose a capability or an improvement to Herald
+title: "[feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Herald is deliberately small: it reads, drafts, and only sends after explicit approval. Proposals that add authority to the model, auto-send, or a general-purpose automation surface are out of scope; see [AGENTS.md](https://github.com/haroon0x/herald/blob/master/AGENTS.md) and the [roadmap](https://github.com/haroon0x/herald/blob/master/docs/roadmap.md).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and Discussions for this request.
+          required: true
+        - label: This request fits Herald's local-first, approval-first design.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Herald cannot do today? Describe the workflow, not a preferred implementation.
+      placeholder: "When I triage mail on a plane, I want to ... but Herald currently ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Herald to do? Include the command surface or configuration you imagine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, or other designs that would solve the problem.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: safety
+    attributes:
+      label: Safety impact
+      description: Which part of the safety model would this change?
+      options:
+        - No change to validation, policy, approval, or send behaviour
+        - Changes validation or policy decisions
+        - Changes the approval flow or send path
+        - Adds a new provider or external data source
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: safety-notes
+    attributes:
+      label: Safety notes
+      description: If the request touches outbound actions, untrusted content, credentials, or browser profiles, explain how the existing invariants still hold.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, prior art, screenshots, or examples from other tools.
+    validations:
+      required: false

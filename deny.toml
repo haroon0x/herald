@@ -1,0 +1,63 @@
+# Dependency policy for Herald. Checked in CI by `.github/workflows/deny.yml`.
+# Run locally with `cargo deny check` (or `just deny`).
+
+[advisories]
+# Version 2 rejects removed fields and denies every vulnerability advisory.
+version = 2
+# A yanked crate is not reproducible and may be yanked for a security reason.
+yanked = "deny"
+# Fail on unmaintained direct dependencies; transitive ones are reported.
+unmaintained = "workspace"
+ignore = []
+
+[bans]
+# Duplicate versions are noisy but not always avoidable; do not fail the build.
+multiple-versions = "warn"
+# A wildcard dependency can silently jump across breaking releases. Workspace
+# members use path-only internal dependencies (`herald-core.workspace = true`),
+# which cargo-deny reports as wildcards for unpublished crates; warn so those
+# stay visible without failing the build on an intentional workspace edge.
+wildcards = "warn"
+# Path and git dependencies in private crates, and dev-dependencies anywhere,
+# are not publishable and need no version requirement.
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[licenses]
+version = 2
+# LICENSE files are fuzzy-matched; this is the cargo-deny default, stated explicitly.
+confidence-threshold = 0.93
+# Permissive licenses only, plus weak copyleft (MPL-2.0), permissive data
+# licenses (CC0, CDLA), and the project license. GPL and LGPL are absent: no
+# dependency may relicense the AGPL core. AGPL-3.0-or-later is allowed because
+# the workspace crates themselves use it.
+allow = [
+    "MIT",
+    "MIT-0",
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "Unlicense",
+    "OpenSSL",
+    "AGPL-3.0-or-later",
+]
+# The allow-list is intentionally broader than the current graph; stale entries
+# are not a failure.
+unused-allowed-license = "allow"
+
+[sources]
+# Every dependency must come from crates.io, over the canonical index.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -1,0 +1,130 @@
+name: Provider request
+description: Request support for a new communication provider
+title: "[provider]: "
+labels: ["provider", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Herald v1 ships the `fake` provider and a local `maildir` provider with SMTP sending. New providers are welcome, but each one is a safety boundary: it introduces new untrusted content, new credentials, and possibly a new way to send.
+
+        A provider request is a design discussion, not a promise to implement. Expect the maintainer to ask about isolation, approval semantics, and failure behaviour before code. See [CONTRIBUTING.md](https://github.com/haroon0x/herald/blob/master/CONTRIBUTING.md#adding-a-provider).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and Discussions for this provider.
+          required: true
+        - label: I understand that adding a provider requires prompt-injection tests and a safety review.
+          required: true
+
+  - type: input
+    id: provider-name
+    attributes:
+      label: Provider name
+      description: The service or protocol, for example "Fastmail JMAP" or "Signal".
+      placeholder: "Fastmail JMAP"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Provider category
+      options:
+        - Email (IMAP, JMAP, local mail)
+        - Chat or messaging
+        - Social or microblog
+        - Calendar or scheduling
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: access
+    attributes:
+      label: How would Herald access it?
+      options:
+        - Official API with a token or OAuth app
+        - Local protocol or files (for example Maildir, JMAP over HTTP)
+        - Browser automation in a dedicated profile
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Read and write capabilities
+      description: List what Herald should read (inbox, threads, contacts) and what it should write (reply, send, label). Separate read-only and outbound actions.
+      placeholder: |
+        Read: list recent messages, fetch a thread.
+        Write: send a reply by SMTP/JMAP, copy to Sent.
+    validations:
+      required: true
+
+  - type: textarea
+    id: auth
+    attributes:
+      label: Authentication and credentials
+      description: What credentials are needed, how does the user obtain them, and can they be read from the environment instead of being written to config?
+    validations:
+      required: true
+
+  - type: textarea
+    id: terms
+    attributes:
+      label: API stability, rate limits, and terms
+      description: Link the official API documentation and state whether automated access is permitted by the provider's terms.
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Safety review
+
+        Answer these even if the provider is read-only. "No" is a valid answer; unexplained "yes" is not.
+
+  - type: textarea
+    id: untrusted-content
+    attributes:
+      label: Untrusted content
+      description: How will message content be treated as data, and what prompt-injection tests would prove it?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Required invariants
+      description: A provider that cannot meet these will not be merged.
+      options:
+        - label: Every outbound action will require explicit user approval; no auto-send.
+          required: true
+        - label: Writes will be idempotent on a client token and reconciled when the outcome is uncertain.
+          required: true
+        - label: Credentials will be read from the environment or an OS keychain, never logged.
+          required: true
+        - label: If browser automation is involved, it will use a dedicated profile and will never read the user's everyday cookies or passwords.
+          required: true
+        - label: Login challenges, captchas, account warnings, and unexpected page structure will stop and report rather than being worked around.
+          required: true
+
+  - type: textarea
+    id: failure-modes
+    attributes:
+      label: Failure modes and stop conditions
+      description: What happens on timeout, rate limit, auth expiry, or an unexpected response? Which conditions must hard-stop?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Prior art, existing libraries, or a prototype. Do not paste credentials or private message contents.
+    validations:
+      required: false

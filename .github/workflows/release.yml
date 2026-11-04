@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (for example v1.0.0)
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: --locked --release --package herald-agent --bin herald
+      - name: Package archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          name="herald-${RELEASE_TAG}-${TARGET}"
+          binary="target/${TARGET}/release/herald"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            binary="${binary}.exe"
+          fi
+          mkdir -p "dist/${name}"
+          cp "${binary}" "dist/${name}/"
+          cp README.md LICENSE "dist/${name}/"
+          cd dist
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            7z a "${name}.zip" "${name}" >/dev/null
+          else
+            tar -czf "${name}.tar.gz" "${name}"
+          fi
+          rm -rf "${name}"
+          ls -l
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: herald-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum herald-*.tar.gz herald-*.zip > SHA256SUMS
+          cat SHA256SUMS
+      - name: Publish GitHub release
+        run: |
+          set -euo pipefail
+          files=(dist/*)
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" \
+              --title "Herald ${RELEASE_TAG}" \
+              --generate-notes \
+              --verify-tag
+          fi

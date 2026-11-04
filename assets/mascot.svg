@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="herald-mascot-title herald-mascot-desc">
+  <title id="herald-mascot-title">Herald, the messenger owl</title>
+  <desc id="herald-mascot-desc">A geometric amber owl with a cream face, dark eyes, and a small cream envelope held at its chest. The owl is Herald's mascot: it watches the inbox, and it carries the message only after you approve it.</desc>
+
+  <g>
+    <!-- Ear tufts -->
+    <path d="M154 138 L118 74 L198 104 Z" fill="#F5B942"/>
+    <path d="M358 138 L394 74 L314 104 Z" fill="#F5B942"/>
+
+    <!-- Body -->
+    <path d="M256 84 C176 84 122 146 122 238 C122 334 180 410 256 442 C332 410 390 334 390 238 C390 146 336 84 256 84 Z" fill="#F5B942"/>
+
+    <!-- Wings -->
+    <path d="M136 226 C112 288 128 350 180 392 C170 334 178 280 204 242 Z" fill="#D99A2B"/>
+    <path d="M376 226 C400 288 384 350 332 392 C342 334 334 280 308 242 Z" fill="#D99A2B"/>
+
+    <!-- Face disc -->
+    <path d="M256 140 C198 140 162 182 162 238 C162 294 202 330 256 330 C310 330 350 294 350 238 C350 182 314 140 256 140 Z" fill="#EDE7DA"/>
+
+    <!-- Eyes -->
+    <circle cx="216" cy="224" r="30" fill="#0B0F14"/>
+    <circle cx="296" cy="224" r="30" fill="#0B0F14"/>
+    <circle cx="216" cy="224" r="14" fill="#F5B942"/>
+    <circle cx="296" cy="224" r="14" fill="#F5B942"/>
+    <circle cx="216" cy="224" r="7" fill="#0B0F14"/>
+    <circle cx="296" cy="224" r="7" fill="#0B0F14"/>
+    <circle cx="208" cy="216" r="4" fill="#EDE7DA"/>
+    <circle cx="288" cy="216" r="4" fill="#EDE7DA"/>
+
+    <!-- Beak -->
+    <path d="M256 236 L238 268 L256 260 L274 268 Z" fill="#0B0F14"/>
+
+    <!-- Envelope held at the chest -->
+    <rect x="212" y="330" width="88" height="60" rx="6" fill="#EDE7DA"/>
+    <path d="M212 336 L256 366 L300 336" fill="none" stroke="#0B0F14" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M212 384 L242 358 M300 384 L270 358" fill="none" stroke="#0B0F14" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="256" cy="374" r="4" fill="#5FD3A6"/>
+
+    <!-- Feet -->
+    <path d="M226 442 L218 462 M226 442 L234 462 M286 442 L278 462 M286 442 L294 462" fill="none" stroke="#D99A2B" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

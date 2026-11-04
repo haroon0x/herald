@@ -1,0 +1,116 @@
+name: Bug report
+description: Report a reproducible defect in Herald
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before you post, remove credentials, message bodies, and personal data from commands, logs, and configuration.
+
+        **Do not report security vulnerabilities here.** Use the [private security advisory form](https://github.com/haroon0x/herald/security/advisories/new) instead; see [SECURITY.md](https://github.com/haroon0x/herald/blob/master/SECURITY.md).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      description: Please confirm all three before filing.
+      options:
+        - label: I searched existing issues and Discussions for this problem.
+          required: true
+        - label: This is not a security vulnerability, and I will not post exploits or credentials here.
+          required: true
+        - label: I removed secrets, message contents, and personal data from everything below.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Herald version
+      description: The output of `herald --version`.
+      placeholder: "herald 1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other (describe in additional context)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Herald?
+      options:
+        - install.sh
+        - Prebuilt release archive
+        - Built from source with Cargo
+        - Other (describe in additional context)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      description: The provider involved, or "Not provider-specific" if the bug is in the CLI, storage, or inference.
+      options:
+        - fake
+        - maildir
+        - gmail (planned, no adapter)
+        - x (planned, no adapter)
+        - Not provider-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact commands, in order. Use redacted example addresses and subjects.
+      placeholder: |
+        1. Run `herald init`
+        2. Run `herald ask "..." --provider maildir`
+        3. Open `herald approvals` and see ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect Herald to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead? Include error codes and whether any action was recorded as failed or uncertain.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste the smallest useful log or terminal transcript. Redact secrets and message content.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Configuration shape (with secrets removed), model backend, mailbox size, or anything else that helps reproduce the problem.
+    validations:
+      required: false

@@ -1,0 +1,37 @@
+name: Dependency policy
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - deny.toml
+      - .github/workflows/deny.yml
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - deny.toml
+      - .github/workflows/deny.yml
+  schedule:
+    # Daily at 05:41 UTC: advisory databases change without a commit.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features

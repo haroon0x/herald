@@ -5,6 +5,7 @@
 
 pub mod fake;
 pub mod maildir;
+pub mod x;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

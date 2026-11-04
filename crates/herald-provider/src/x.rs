@@ -1305,7 +1305,20 @@ fn map_cdp(error: chromiumoxide::error::CdpError) -> ProviderError {
 #[async_trait]
 impl XClient for ChromeClient {
     async fn open(&mut self, url: &str) -> Result<(), ProviderError> {
-        self.page.goto(url).await.map_err(map_cdp)?;
+        if let Err(error) = self.page.goto(url).await {
+            // CDP reports a navigation error for non-2xx responses even when a
+            // body rendered. X answers a signed-out browser with an error
+            // status; the body is still the login page, so let the parser
+            // classify it instead of calling every 4xx a browser failure.
+            match self.page.content().await {
+                Ok(html) if html.trim().len() > 256 => {
+                    tracing::debug!(%error, "navigation returned an HTTP error; classifying the rendered body");
+                    pause(self.action_delay_ms).await;
+                    return Ok(());
+                }
+                _ => return Err(map_cdp(error)),
+            }
+        }
         pause(self.action_delay_ms).await;
         Ok(())
     }

@@ -24,7 +24,8 @@ pub use action::{
 pub use error::PlanError;
 pub use policy::{ApprovalRequest, AutopostPolicy, Decision, PolicyConfig, Rejection, authorize};
 pub use provider::{
-    MessageId, MessageQuery, MessageSummary, ProviderId, ProviderMessage, Thread, Untrusted,
+    MessageId, MessageQuery, MessageScope, MessageSummary, ProviderId, ProviderMessage, Thread,
+    Untrusted,
 };
 pub use quality::{
     is_clean_tweet_text, is_interrogation_dodge_reply, passes_tweet_quality_floor,

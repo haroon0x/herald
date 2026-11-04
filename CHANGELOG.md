@@ -45,8 +45,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 - `herald x login` opens ordinary Chrome on the dedicated profile instead of a
   CDP session, because Google's OAuth refuses automation-controlled browsers.
   Herald's own browser no longer passes `--enable-automation`.
-- Live X reads verified against a signed-in profile: mentions and status
-  threads parse real posts and replies with stable ids and timestamps. The DM
+- Live X reads verified against a signed-in profile: mentions, status threads,
+  and the home timeline parse real posts and replies with stable ids and
+  timestamps. `herald inbox --scope feed` reads the home feed. The DM
   conversation list is still unverified and reports nothing rather than
   guessing. Home feed, richer notifications, and a GUI are on the roadmap.
 - `ProviderId::X` is now implemented. `herald providers` performs a real

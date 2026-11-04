@@ -36,8 +36,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use herald_core::{
-    MessageId, MessageQuery, MessageSummary, ProviderId, ProviderMessage, Thread, ThreadId,
-    Untrusted, body_hash, time::now_ms,
+    MessageId, MessageQuery, MessageScope, MessageSummary, ProviderId, ProviderMessage, Thread,
+    ThreadId, Untrusted, body_hash, time::now_ms,
 };
 
 use crate::{
@@ -446,18 +446,37 @@ impl XProvider {
         query: &MessageQuery,
     ) -> Result<Vec<MessageSummary>, ProviderError> {
         let client = self.ensure_client(slot).await?;
-        client.open(MENTIONS_URL).await?;
-        let mentions_html = client.html().await?;
-        tracing::debug!(bytes = mentions_html.len(), "parsing X mentions");
-        let mut items = parse_mentions(&mentions_html)?;
+        let items = match query.scope {
+            MessageScope::Feed => {
+                client.open(HOME_URL).await?;
+                // The home timeline paints its shell before the first cards.
+                client.wait_for(SEL_TWEET_ARTICLE, PAGE_TIMEOUT).await?;
+                parse_feed(&client.html().await?)?
+            }
+            MessageScope::Mentions => {
+                client.open(MENTIONS_URL).await?;
+                parse_mentions(&client.html().await?)?
+            }
+            MessageScope::Dms => {
+                client.open(MESSAGES_URL).await?;
+                parse_dm_list(&client.html().await?)?
+            }
+            MessageScope::All => {
+                client.open(MENTIONS_URL).await?;
+                let mentions_html = client.html().await?;
+                tracing::debug!(bytes = mentions_html.len(), "parsing X mentions");
+                let mut items = parse_mentions(&mentions_html)?;
 
-        client.open(MESSAGES_URL).await?;
-        let dms_html = client.html().await?;
-        // A failure on the DM page is a real failure: a challenge or a layout
-        // change must not be hidden behind a successful mentions read.
-        let dms = parse_dm_list(&dms_html)?;
-        tracing::debug!(count = dms.len(), "parsed X DM list");
-        items.extend(dms);
+                client.open(MESSAGES_URL).await?;
+                let dms_html = client.html().await?;
+                // A failure on the DM page is a real failure: a challenge or a
+                // layout change must not be hidden behind a mentions read.
+                let dms = parse_dm_list(&dms_html)?;
+                tracing::debug!(count = dms.len(), "parsed X DM list");
+                items.extend(dms);
+                items
+            }
+        };
 
         let seen = self.read_seen();
         let search = query
@@ -953,6 +972,30 @@ pub fn parse_mentions(html: &str) -> Result<Vec<XItem>, ProviderError> {
     if !saw_article && !has_selector(&doc, SEL_PRIMARY_COLUMN)? {
         return Err(ProviderError::UnexpectedLayout(
             "the mentions page did not render a timeline".into(),
+        ));
+    }
+    Ok(items)
+}
+
+/// Parse the home timeline. Promoted or truncated cards without a status
+/// permalink are skipped rather than invented; a page with no timeline at all
+/// is still a layout failure.
+pub fn parse_feed(html: &str) -> Result<Vec<XItem>, ProviderError> {
+    let doc = scraper::Html::parse_document(html);
+    guard_page(&doc)?;
+    let articles = selector(SEL_TWEET_ARTICLE)?;
+    let mut items = Vec::new();
+    let mut skipped = 0_usize;
+    for article in doc.select(&articles) {
+        match parse_tweet_article(&article) {
+            Ok(item) => items.push(item),
+            Err(_) => skipped += 1,
+        }
+    }
+    tracing::debug!(items = items.len(), skipped, "parsed X home feed");
+    if items.is_empty() && !has_selector(&doc, SEL_PRIMARY_COLUMN)? {
+        return Err(ProviderError::UnexpectedLayout(
+            "the home timeline did not render".into(),
         ));
     }
     Ok(items)
@@ -1864,6 +1907,25 @@ mod tests {
         </div>
     </div></body></html>"#;
 
+    const HOME_FEED_HTML: &str = r#"<html><body><div data-testid="primaryColumn">
+        <article data-testid="tweet">
+          <div data-testid="User-Name"><span>Ada</span><span>@ada</span></div>
+          <div data-testid="tweetText">Working on a local-first agent today.</div>
+          <a href="/ada/status/901">Nov 4</a>
+          <time datetime="2026-11-04T08:00:00.000Z"></time>
+        </article>
+        <article data-testid="tweet">
+          <div data-testid="User-Name"><span>Me</span><span>@me</span></div>
+          <div data-testid="tweetText">The timeline is readable now.</div>
+          <a href="/me/status/902">Nov 4</a>
+          <time datetime="2026-11-04T09:00:00.000Z"></time>
+        </article>
+        <article data-testid="tweet">
+          <div data-testid="User-Name"><span>Promoted</span><span>@ad</span></div>
+          <div data-testid="tweetText">Buy something.</div>
+        </article>
+    </div></body></html>"#;
+
     const COMPOSE_HTML: &str = r#"<html><body><div data-testid="primaryColumn">
         <div data-testid="tweetTextarea_0" contenteditable="true"></div>
         <div data-testid="tweetButtonInline" role="button">Post</div>
@@ -2107,6 +2169,31 @@ mod tests {
         assert_eq!(unread.len(), 3);
     }
 
+    #[test]
+    fn feed_parses_posts_and_skips_cards_without_a_permalink() {
+        let items = parse_feed(HOME_FEED_HTML).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id.as_str(), "mention:901");
+        assert_eq!(items[1].sender, "@me");
+    }
+
+    #[tokio::test]
+    async fn feed_scope_only_opens_the_home_timeline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = open_provider(&tmp, ScriptedX::new().page(HOME_URL, HOME_FEED_HTML));
+        let summaries = provider
+            .list_recent(&MessageQuery::scoped(10, MessageScope::Feed))
+            .await
+            .unwrap();
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].thread_id.as_str(), "mention:902");
+        assert!(
+            summaries
+                .iter()
+                .any(|item| item.thread_id.as_str() == "mention:901")
+        );
+    }
+
     #[tokio::test]
     async fn search_and_limit_are_case_insensitive_and_bounded() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2120,6 +2207,7 @@ mod tests {
             unread_only: false,
             search: Some("DECK".into()),
             limit: 5,
+            ..MessageQuery::default()
         };
         let found = provider.list_recent(&query).await.unwrap();
         assert_eq!(found.len(), 1);

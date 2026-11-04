@@ -319,10 +319,17 @@ result to.
 | `dm:<conversation_id>` | Private conversation | Read, reply (a DM) |
 | `timeline` | The compose surface. Not a conversation, identifies no recipient | Post only |
 
-`list_recent` merges the mentions tab and the DM list, newest first, and honours
-`--unread`, `search`, and `limit`. Unread is **local**: X exposes no reliable
-unread state in the DOM, so the adapter keeps a bounded seen-ledger at
-`<data-dir>/x-seen.json` and `get_thread` marks what it showed as seen.
+`list_recent` honours a read scope: `all` merges the mentions tab and the DM
+list, `mentions` reads only mentions, `feed` reads the home timeline, and `dms`
+reads only conversations. Results are newest first and honour `--unread`,
+`search`, and `limit`. The home timeline and status pages are verified against
+the live DOM; the DM conversation list is not: X renders DMs in an embedded
+`xchat` app whose conversation DOM is not in the page snapshot, so `dms` reports
+nothing rather than guessing.
+
+Unread is **local**: X exposes no reliable unread state in the DOM, so the
+adapter keeps a bounded seen-ledger at `<data-dir>/x-seen.json` and
+`get_thread` marks what it showed as seen.
 
 ### Writes, idempotency, and verification
 

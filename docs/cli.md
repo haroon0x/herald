@@ -313,16 +313,26 @@ Dry run: no action was recorded and no provider was changed.
 ### `herald inbox`
 
 ```text
-herald inbox [--unread] [--limit N] [--provider P]
+herald inbox [--scope all|feed|mentions|dms] [--unread] [--limit N] [--provider P]
 ```
 
-Lists recent messages. Default limit 10. Unread messages are marked with `*`.
-The provider must have an adapter.
+Lists recent messages. Default limit 10 and default scope `all` (for X:
+mentions plus DMs). `--scope feed` reads the home timeline, `--scope mentions`
+only public mentions, `--scope dms` only conversations. Providers with one
+surface ignore the scope. Unread messages are marked with `*`.
 
 ```console
 $ herald inbox --unread
 * Alex Founder <alex@example.com>   Interview next steps   [t-founder]
   id: m-founder-2
+```
+
+The X home timeline:
+
+```console
+$ herald inbox --provider x --scope feed --limit 5
+* @ada                            Post by @ada             [mention:901]
+  id: mention:901
 ```
 
 `data`: `{"provider","unread_only","messages":[{"id","thread_id","sender","subject","timestamp_ms","unread"}],"count"}`.

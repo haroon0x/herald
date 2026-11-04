@@ -61,10 +61,11 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
             .await
         }
         Command::Inbox {
+            scope,
             unread,
             limit,
             provider,
-        } => inbox::inbox(app, unread, limit, provider.as_deref()).await,
+        } => inbox::inbox(app, scope.into(), unread, limit, provider.as_deref()).await,
         Command::Thread { id, provider } => inbox::thread(app, &id, provider.as_deref()).await,
         Command::Approvals => approvals::list(app),
         Command::Approve { id } => approvals::approve(app, &id).await,

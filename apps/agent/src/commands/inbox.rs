@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use herald_core::{MessageQuery, ThreadId};
+use herald_core::{MessageQuery, MessageScope, ThreadId};
 
 use crate::app::App;
 use crate::commands::{ask, resolve_provider};
@@ -10,6 +10,7 @@ use crate::error::AppError;
 
 pub async fn inbox(
     app: &App,
+    scope: MessageScope,
     unread: bool,
     limit: usize,
     provider_override: Option<&str>,
@@ -22,11 +23,12 @@ pub async fn inbox(
         )
     })?;
 
-    let query = if unread {
+    let mut query = if unread {
         MessageQuery::unread(limit)
     } else {
         MessageQuery::recent(limit)
     };
+    query.scope = scope;
     let messages = adapter.list_recent(&query).await?;
 
     if messages.is_empty() {
@@ -39,6 +41,7 @@ pub async fn inbox(
         "inbox",
         json!({
             "provider": provider_id,
+            "scope": scope,
             "unread_only": unread,
             "messages": ask::messages_json(&messages),
             "count": messages.len(),

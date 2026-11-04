@@ -83,14 +83,14 @@ owner has signed off.
 
 These are requested and tracked, not shipped:
 
-- **Home feed reads.** A read-only view of `x.com/home` (the timeline the user
-  actually scrolls), separate from mentions, so Herald can summarize the feed
-  without pretending the home timeline is an inbox.
+- **Home feed reads.** Shipped as `herald inbox --provider x --scope feed`
+  (read-only, home timeline as its own scope).
 - **Notifications beyond mentions.** Likes, reposts, follows, and system
   notices, still parsed as untrusted text.
-- **DM list selectors.** Mentions and status threads are verified against the
-  live DOM; the DM conversation list still needs a capture from the dedicated
-  profile and a parser fix. It currently reports nothing rather than guessing.
+- **DM list selectors.** X now renders DMs in an embedded `xchat` app whose
+  conversation DOM is not in the page snapshot. Mentions, status threads, and
+  the home feed are verified against the live DOM; DMs report nothing until
+  the embed is understood, rather than guessing.
 - **A GUI.** The CLI is the only surface today. A desktop or TUI front end would
   wrap the same commands and approval queue; it must not add a second execution
   path, and every send still needs an explicit approval. The provider surface

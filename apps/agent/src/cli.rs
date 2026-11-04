@@ -89,6 +89,8 @@ pub enum Command {
     },
     /// List recent messages from a provider.
     Inbox {
+        #[arg(long, value_enum, default_value_t = ScopeArg::All)]
+        scope: ScopeArg,
         #[arg(long)]
         unread: bool,
         #[arg(long, default_value_t = 10)]
@@ -156,6 +158,26 @@ pub enum Command {
     },
     /// Print shell completions.
     Completions { shell: Shell },
+}
+
+/// Which read surface `herald inbox` asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ScopeArg {
+    All,
+    Feed,
+    Mentions,
+    Dms,
+}
+
+impl From<ScopeArg> for herald_core::MessageScope {
+    fn from(value: ScopeArg) -> Self {
+        match value {
+            ScopeArg::All => Self::All,
+            ScopeArg::Feed => Self::Feed,
+            ScopeArg::Mentions => Self::Mentions,
+            ScopeArg::Dms => Self::Dms,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]

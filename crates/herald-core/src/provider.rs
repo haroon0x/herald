@@ -136,15 +136,43 @@ pub struct Thread {
     pub messages: Vec<ProviderMessage>,
 }
 
+/// Which read surface a query addresses. Providers that have only one surface
+/// ignore it; X uses it to separate the home feed from mentions and DMs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageScope {
+    /// Whatever the provider's default inbox is (mentions + DMs for X).
+    #[default]
+    All,
+    /// The user's own home timeline.
+    Feed,
+    /// Public mentions of the user.
+    Mentions,
+    /// Private conversations.
+    Dms,
+}
+
 /// Query used by read-only provider operations.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageQuery {
     pub unread_only: bool,
     pub search: Option<String>,
     pub limit: usize,
+    #[serde(default)]
+    pub scope: MessageScope,
 }
 
 impl MessageQuery {
+    #[must_use]
+    pub fn scoped(limit: usize, scope: MessageScope) -> Self {
+        Self {
+            unread_only: false,
+            search: None,
+            limit,
+            scope,
+        }
+    }
+
     #[must_use]
     pub fn recent(limit: usize) -> Self {
         Self {

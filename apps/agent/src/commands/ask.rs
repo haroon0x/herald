@@ -72,6 +72,35 @@ pub async fn run(
     match &decision {
         Decision::Allowed => {
             let id = action_id();
+
+            // The autopost lane is the only allowed send; it runs the same
+            // prepare/send/verify path but without an approval.
+            if let Action::Send(send_action) = &action {
+                let outcome = send::execute_autopost_send(app, send_action, &id).await?;
+                app.out.blank();
+                app.out.heading("Autopost");
+                app.out.field("status", outcome.status);
+                if let Some(message_id) = &outcome.message_id {
+                    app.out.field("message", message_id);
+                }
+                app.out.field("detail", &outcome.detail);
+                app.out.data(
+                    "ask",
+                    json!({
+                        "status": if outcome.status == "sent" { "succeeded" } else { outcome.status },
+                        "lane": "autopost",
+                        "action_id": id,
+                        "provider": action.provider(),
+                        "operation": operation_name(&action),
+                        "target": action.target().describe(),
+                        "message_id": outcome.message_id,
+                        "verified": outcome.verified,
+                        "detail": outcome.detail,
+                    }),
+                );
+                return Ok(0);
+            }
+
             send::record_action(app, &action, &id, None)?;
             let outcome = send::execute_allowed(app, &action, &id, model.as_ref()).await?;
             print_outcome(app, &outcome);
@@ -125,7 +154,7 @@ pub async fn run(
                     "status": "awaiting_approval",
                     "action_id": queued.action_id,
                     "provider": queued.provider,
-                    "operation": "send_reply",
+                    "operation": operation_name(&action),
                     "target": queued.target,
                     "thread_id": queued.thread_id,
                     "body": queued.body,
@@ -227,7 +256,7 @@ pub async fn dry_run(
 }
 
 async fn model_for(app: &App, engine: EngineArg) -> Result<Option<Model>, AppError> {
-    match planner::build_model(engine, &app.config, &app.models_dir).await {
+    match planner::build_model(engine, &app.config, &app.data_dir, &app.models_dir).await {
         Ok(model) => Ok(model),
         Err(error) if engine == EngineArg::Auto => {
             app.out

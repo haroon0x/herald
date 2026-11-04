@@ -5,11 +5,13 @@
 //! phrase, but only the provider adapter turns a phrase into a thread id.
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use herald_config::{Config, ModelBackend};
 use herald_core::{ActionPlan, Operation, ProviderId, Thread, rules};
-use herald_runtime::{Inference, LlamaSidecar, ModelManifest, OpenAiClient, SidecarConfig};
+use herald_runtime::{
+    Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference, SidecarConfig,
+};
 
 use crate::cli::EngineArg;
 use crate::error::AppError;
@@ -103,13 +105,14 @@ impl Model {
 pub async fn build_model(
     engine: EngineArg,
     config: &Config,
+    data_dir: &Path,
     models_dir: &Path,
 ) -> Result<Option<Model>, AppError> {
     if engine == EngineArg::Rules || config.model.backend == ModelBackend::None {
         if engine == EngineArg::Model {
             return Err(AppError::new(
                 "model_not_configured",
-                "engine `model` requires [model] backend = \"managed\" or \"openai\"",
+                "engine `model` requires [model] backend = \"managed\", \"openai\", or \"opencode\"",
             ));
         }
         return Ok(None);
@@ -169,6 +172,19 @@ pub async fn build_model(
             let client = OpenAiClient::new(endpoint, name, api_key)
                 .map_err(|error| AppError::new("model", error.to_string()))?;
             Ok(Some(Model::new(Box::new(client))))
+        }
+        ModelBackend::OpenCode => {
+            let binary = std::env::var_os("HERALD_OPENCODE_PATH")
+                .map_or_else(|| PathBuf::from("opencode"), PathBuf::from);
+            let model = config
+                .model
+                .model_name
+                .clone()
+                .unwrap_or_else(|| herald_runtime::opencode::DEFAULT_MODEL.to_string());
+            let sandbox = data_dir.join("opencode-sandbox");
+            Ok(Some(Model::new(Box::new(OpenCodeInference::new(
+                binary, model, sandbox,
+            )))))
         }
     }
 }

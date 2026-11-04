@@ -12,6 +12,7 @@ use herald_config::{Config, SmtpSecurity as ConfigSmtpSecurity};
 use herald_core::ProviderId;
 use herald_provider::fake::FakeProvider;
 use herald_provider::maildir::{MaildirConfig, MaildirProvider, SmtpConfig, SmtpSecurity};
+use herald_provider::x::{XConfig, XProvider};
 use herald_provider::{CommunicationProvider, ProviderError};
 
 use crate::error::AppError;
@@ -47,6 +48,36 @@ impl Registry {
                 }
                 Err(error) => warnings.push(format!("maildir provider disabled: {error}")),
             }
+        }
+
+        if let Some(x) = &config.x {
+            let profile_dir = config.x_profile_dir(data_dir);
+            if herald_provider::x::detect_chrome().is_none() {
+                warnings.push(
+                    "the X adapter needs Chrome or Chromium; install it or set CHROME before using x"
+                        .into(),
+                );
+            } else if !profile_dir.exists() {
+                warnings.push(format!(
+                    "the X profile {} is not initialised; run `herald x login`",
+                    profile_dir.display()
+                ));
+            }
+            adapters.insert(
+                ProviderId::X,
+                Arc::new(XProvider::new(
+                    XConfig {
+                        profile_dir,
+                        handle: x.handle.clone(),
+                        headless: x.headless,
+                        action_delay_ms: x.action_delay_ms,
+                        typing_delay_ms: x.typing_delay_ms,
+                        close_after: x.close_after,
+                        browser_executable: None,
+                    },
+                    data_dir.to_path_buf(),
+                )),
+            );
         }
 
         Self { adapters, warnings }

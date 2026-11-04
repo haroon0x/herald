@@ -30,6 +30,8 @@ struct EvalCase {
     body_contains: Option<String>,
     #[serde(default)]
     target_contains: Option<String>,
+    #[serde(default)]
+    target_kind: Option<String>,
 }
 
 #[derive(Debug)]
@@ -72,7 +74,7 @@ pub async fn run(
     }
 
     let model: Option<Model> =
-        match planner::build_model(engine, &app.config, &app.models_dir).await {
+        match planner::build_model(engine, &app.config, &app.data_dir, &app.models_dir).await {
             Ok(model) => model,
             Err(error) if engine == EngineArg::Auto => {
                 app.out
@@ -222,6 +224,18 @@ fn score(plan: ActionPlan, case: &EvalCase, source: &'static str) -> Outcome {
         }
     }
 
+    if let Some(expected) = case.target_kind.as_deref() {
+        let actual = match &plan.target {
+            herald_core::Target::Description { .. } => "description",
+            herald_core::Target::Thread { .. } => "thread",
+            herald_core::Target::LatestFrom { .. } => "latest_from",
+            herald_core::Target::Timeline => "timeline",
+        };
+        if actual != expected {
+            return Outcome::Fail(format!("expected target {expected}, got {actual}"));
+        }
+    }
+
     if let Some(needle) = case.target_contains.as_deref()
         && !plan
             .target
@@ -254,6 +268,7 @@ mod tests {
             clarify,
             body_contains: None,
             target_contains: None,
+            target_kind: None,
         }
     }
 

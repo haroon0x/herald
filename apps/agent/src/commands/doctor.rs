@@ -236,6 +236,25 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
                 ),
             ));
         }
+        ModelBackend::OpenCode => {
+            let binary = std::env::var_os("HERALD_OPENCODE_PATH")
+                .map_or_else(|| PathBuf::from("opencode"), PathBuf::from);
+            let model = app
+                .config
+                .model
+                .model_name
+                .as_deref()
+                .unwrap_or(herald_runtime::opencode::DEFAULT_MODEL);
+            match probe_version(&binary, std::time::Duration::from_secs(10)).await {
+                Ok(version) => {
+                    checks.push(Check::ok("model", format!("opencode {version} ({model})")));
+                }
+                Err(error) => checks.push(Check::fail(
+                    "opencode",
+                    format!("{}: {error}", binary.display()),
+                )),
+            }
+        }
         ModelBackend::Managed => {
             let manifest_path = app
                 .config
@@ -324,6 +343,36 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
     );
 
     Ok(u8::from(problems > 0))
+}
+
+async fn probe_version(
+    binary: &Path,
+    timeout: std::time::Duration,
+) -> Result<String, std::io::Error> {
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(timeout, command.output())
+        .await
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "version check timed out")
+        })??;
+    if !output.status.success() {
+        return Err(std::io::Error::other(format!(
+            "--version exited with {}",
+            output.status
+        )));
+    }
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(if version.is_empty() {
+        "version unknown".to_string()
+    } else {
+        version
+    })
 }
 
 fn find_binary(name: &str) -> Option<PathBuf> {

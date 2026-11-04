@@ -526,3 +526,63 @@ fn an_expired_approval_is_cancelled_not_left_pending() {
     assert!(!output.status.success());
     assert_eq!(approve["error"]["code"], "invalid_state");
 }
+
+#[test]
+fn autopost_kill_switch_is_a_file_and_status_fails_closed() {
+    let env = Env::new();
+
+    let (status, output) = env.json(&["autopost", "status"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&status)["status"], "approval_only");
+    assert_eq!(data(&status)["kill_switch"], false);
+
+    let (off, output) = env.json(&["autopost", "off"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&off)["kill_switch"], true);
+    assert!(env.data.join("autopost.disabled").exists());
+
+    let (status, _) = env.json(&["autopost", "status"], &[]);
+    assert_eq!(data(&status)["kill_switch"], true);
+    assert_eq!(data(&status)["status"], "approval_only");
+
+    let (on, _) = env.json(&["autopost", "on"], &[]);
+    assert_eq!(data(&on)["kill_switch"], false);
+    assert!(!env.data.join("autopost.disabled").exists());
+}
+
+#[test]
+fn a_post_without_the_autopost_lane_still_queues_an_approval() {
+    let env = Env::new();
+    let mut config = std::fs::read_to_string(&env.config).unwrap();
+    config.push_str("\n[x]\nhandle = \"@me\"\nheadless = true\n");
+    std::fs::write(&env.config, config).unwrap();
+
+    let (ask, output) = env.json(
+        &[
+            "ask",
+            "Post exactly: \"Shipping the X adapter today.\"",
+            "--provider",
+            "x",
+            "--enable-send",
+            "--engine",
+            "rules",
+        ],
+        &[],
+    );
+    assert!(output.status.success());
+    assert_eq!(data(&ask)["status"], "awaiting_approval");
+    assert_eq!(data(&ask)["operation"], "create_post");
+    assert_eq!(data(&ask)["thread_id"], "timeline");
+    assert!(
+        !env.data.join("x-sent.json").exists(),
+        "nothing may be posted while the lane is off"
+    );
+}
+
+#[test]
+fn x_login_requires_an_x_section_and_never_launches_blindly() {
+    let env = Env::new();
+    let (error, output) = env.json(&["x", "login"], &[]);
+    assert!(!output.status.success());
+    assert_eq!(error["error"]["code"], "not_configured");
+}

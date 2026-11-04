@@ -31,6 +31,26 @@ pub fn status(app: &App) -> u8 {
                 app.config.model.model_name.as_deref().unwrap_or("?"),
             );
         }
+        ModelBackend::OpenCode => {
+            app.out.field(
+                "model",
+                app.config
+                    .model
+                    .model_name
+                    .as_deref()
+                    .unwrap_or(herald_runtime::opencode::DEFAULT_MODEL),
+            );
+            app.out.field(
+                "binary",
+                std::env::var("HERALD_OPENCODE_PATH").unwrap_or_else(|_| "opencode".to_string()),
+            );
+            app.out.field(
+                "sandbox",
+                app.data_dir.join("opencode-sandbox").display().to_string(),
+            );
+            app.out
+                .line("One-shot `opencode run --standalone --model <id>` per completion; --auto is never passed.");
+        }
         ModelBackend::Managed => {
             let manifest_path = manifest_path(app, None);
             app.out.field("manifest", manifest_path.display());

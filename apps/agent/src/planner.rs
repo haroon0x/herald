@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use herald_config::{Config, ModelBackend};
-use herald_core::{ActionPlan, Operation, ProviderId, Thread, rules};
+use herald_core::{ActionPlan, Operation, ProviderId, Target, Thread, rules};
 use herald_runtime::{
     Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference, SidecarConfig,
 };
@@ -28,14 +28,29 @@ pub struct Model {
     backend: Box<dyn Inference>,
 }
 
+/// One classifier answer: the operation, the clarification flag, and the two
+/// free-text fields the model is allowed to improve.
+///
+/// Every field is untrusted model output and every field is optional in
+/// meaning: an empty string means "no answer", and [`plan_from_classification`]
+/// falls back to the deterministic hint rather than inventing one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Classification {
+    pub operation: Operation,
+    pub needs_clarification: bool,
+    pub question: String,
+    pub target: String,
+}
+
 impl Model {
     #[must_use]
     pub fn new(backend: Box<dyn Inference>) -> Self {
         Self { backend }
     }
 
-    /// Tier 1: choose one operation and whether to ask a question.
-    pub async fn classify(&self, instruction: &str) -> Result<(Operation, bool), AppError> {
+    /// Tier 1: choose one operation, whether to ask a question, and the two
+    /// phrases the model may name better than the regex does.
+    pub async fn classify(&self, instruction: &str) -> Result<Classification, AppError> {
         let user = format!(
             "Classify this request:\n<user-instruction>\n{}\n</user-instruction>\n/no_think",
             instruction.trim()
@@ -214,17 +229,52 @@ pub async fn plan(
         return Ok(None);
     };
 
-    let (operation, needs_clarification) = model.classify(instruction).await?;
+    let classification = model.classify(instruction).await?;
 
-    Ok(Some(ActionPlan {
+    Ok(Some(plan_from_classification(
         provider,
-        operation,
-        target: rules::target_hint(instruction),
+        instruction,
+        &classification,
+    )))
+}
+
+/// Turn a classifier answer into a plan. The result is still untrusted; the
+/// caller validates it and the policy still decides.
+///
+/// A model-named target is a phrase, never an identity: it becomes
+/// `Target::Description` and only the provider adapter may resolve it against
+/// real messages. An empty phrase falls back to the deterministic hint, so the
+/// model can improve the target but cannot break the pipeline by omitting it.
+/// A question is kept only when the model also asked for clarification; an
+/// empty one is left for `validate_plan` to replace with its default.
+#[must_use]
+pub fn plan_from_classification(
+    provider: ProviderId,
+    instruction: &str,
+    classification: &Classification,
+) -> ActionPlan {
+    let phrase = classification.target.trim();
+    let target = if phrase.is_empty() {
+        rules::target_hint(instruction)
+    } else {
+        Target::Description {
+            description: phrase.to_string(),
+        }
+    };
+
+    let clarification_question = classification
+        .needs_clarification
+        .then(|| classification.question.trim().to_string())
+        .filter(|question| !question.is_empty());
+
+    ActionPlan {
+        provider,
+        operation: classification.operation,
+        target,
         reply_body: rules::body_hint(instruction),
-        needs_clarification,
-        clarification_question: needs_clarification
-            .then(|| "Which message do you mean?".to_string()),
-    }))
+        needs_clarification: classification.needs_clarification,
+        clarification_question,
+    }
 }
 
 /// Fill in the body of an unquoted reply plan with the draft model.
@@ -286,16 +336,29 @@ fn summarize_prompt(thread: &Thread, instruction: &str) -> (String, String) {
     (system, user)
 }
 
-fn parse_classifier(raw: &str) -> Result<(Operation, bool), anyhow::Error> {
+fn parse_classifier(raw: &str) -> Result<Classification, anyhow::Error> {
     let json = json_slice(raw).ok_or_else(|| anyhow::anyhow!("no JSON object in model output"))?;
     let value: serde_json::Value = serde_json::from_str(json)?;
     let operation: Operation = serde_json::from_value(value["operation"].clone())
         .map_err(|error| anyhow::anyhow!("unknown operation: {error}"))?;
+    let text = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
     let needs_clarification = value
         .get("needs_clarification")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    Ok((operation, needs_clarification))
+    Ok(Classification {
+        operation,
+        needs_clarification,
+        question: text("question"),
+        target: text("target"),
+    })
 }
 
 /// Find the first substring that parses as a JSON object, ignoring fences and
@@ -351,7 +414,7 @@ fn object_end(raw: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herald_core::{MessageId, ProviderMessage, ThreadId, Untrusted};
+    use herald_core::{MessageId, PlanError, ProviderMessage, ThreadId, Untrusted, validate_plan};
 
     #[test]
     fn finds_json_through_a_code_fence() {
@@ -375,13 +438,135 @@ mod tests {
         assert_eq!(json_slice("{\"operation\":\"send"), None);
     }
 
+    fn classification(
+        operation: Operation,
+        clarify: bool,
+        question: &str,
+        target: &str,
+    ) -> Classification {
+        Classification {
+            operation,
+            needs_clarification: clarify,
+            question: question.to_string(),
+            target: target.to_string(),
+        }
+    }
+
     #[test]
-    fn parses_a_classifier_object() {
-        let (operation, clarify) =
-            parse_classifier("{\"needs_clarification\":true,\"operation\":\"prepare_reply\"}")
+    fn parses_a_four_field_classifier_object() {
+        let parsed = parse_classifier(
+            "{\"needs_clarification\":true,\"operation\":\"prepare_reply\",\
+             \"question\":\"Which Sam?\",\"target\":\"the thread with Sam\"}",
+        )
+        .unwrap();
+        assert_eq!(parsed.operation, Operation::PrepareReply);
+        assert!(parsed.needs_clarification);
+        assert_eq!(parsed.question, "Which Sam?");
+        assert_eq!(parsed.target, "the thread with Sam");
+    }
+
+    /// A model that omits the new fields (or answers through a backend that
+    /// does not enforce the grammar) must not fail the turn: both strings come
+    /// back empty and the plan builder falls back.
+    #[test]
+    fn a_classifier_object_without_the_new_fields_parses_as_empty() {
+        let parsed =
+            parse_classifier("{\"needs_clarification\":false,\"operation\":\"get_thread\"}")
                 .unwrap();
-        assert_eq!(operation, Operation::PrepareReply);
-        assert!(clarify);
+        assert_eq!(parsed.operation, Operation::GetThread);
+        assert_eq!(parsed.target, "");
+        assert_eq!(parsed.question, "");
+    }
+
+    #[test]
+    fn an_empty_model_target_falls_back_to_the_deterministic_hint() {
+        let instruction = "Summarize the latest email from the founder about the interview.";
+        let plan = plan_from_classification(
+            ProviderId::Fake,
+            instruction,
+            &classification(Operation::SummarizeThread, false, "", "   "),
+        );
+        assert_eq!(plan.target, rules::target_hint(instruction));
+    }
+
+    /// The regex only understands "from X", "to X" and outbound verbs. A phrase
+    /// the model names for a request with none of those is an improvement, not a
+    /// disagreement, so it must win.
+    #[test]
+    fn a_model_target_beats_the_regex() {
+        let plan = plan_from_classification(
+            ProviderId::Fake,
+            "Summarize the lease dispute thread.",
+            &classification(
+                Operation::SummarizeThread,
+                false,
+                "",
+                "the lease dispute thread",
+            ),
+        );
+        assert_eq!(
+            plan.target,
+            Target::Description {
+                description: "the lease dispute thread".into()
+            }
+        );
+        assert!(matches!(
+            rules::target_hint("Summarize the lease dispute thread."),
+            Target::Description { .. }
+        ));
+    }
+
+    /// The question is only used when the flag is set, so a stray question on a
+    /// read can never reach the user or turn into a clarification.
+    #[test]
+    fn a_model_question_does_not_survive_a_false_flag() {
+        let plan = plan_from_classification(
+            ProviderId::Fake,
+            "Show unread messages.",
+            &classification(
+                Operation::ListUnreadMessages,
+                false,
+                "Which inbox?",
+                "unread",
+            ),
+        );
+        assert_eq!(plan.clarification_question, None);
+        assert!(validate_plan(plan).is_ok());
+    }
+
+    #[test]
+    fn a_model_question_reaches_the_clarification_path() {
+        let plan = plan_from_classification(
+            ProviderId::Fake,
+            "Reply to Sam.",
+            &classification(
+                Operation::SendReply,
+                true,
+                "What should the reply say?",
+                "Sam",
+            ),
+        );
+        assert!(matches!(
+            validate_plan(plan),
+            Err(PlanError::ClarificationRequired(question))
+                if question == "What should the reply say?"
+        ));
+    }
+
+    /// With no question from the model, validation still supplies the default,
+    /// so a clarification is never a plan with an empty question.
+    #[test]
+    fn an_empty_model_question_keeps_the_default_question() {
+        let plan = plan_from_classification(
+            ProviderId::Fake,
+            "Reply to Sam.",
+            &classification(Operation::SendReply, true, "", "Sam"),
+        );
+        assert_eq!(plan.clarification_question, None);
+        assert!(matches!(
+            validate_plan(plan),
+            Err(PlanError::ClarificationRequired(question)) if !question.trim().is_empty()
+        ));
     }
 
     #[test]

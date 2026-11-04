@@ -98,8 +98,12 @@ pub async fn run(
                 }
                 None => match model.as_ref() {
                     Some(model) => match model.classify(&case.instruction).await {
-                        Ok((operation, clarify)) => score(
-                            plan_from_classifier(provider, &case.instruction, operation, clarify),
+                        Ok(classification) => score(
+                            planner::plan_from_classification(
+                                provider,
+                                &case.instruction,
+                                &classification,
+                            ),
                             case,
                             "model",
                         ),
@@ -110,8 +114,12 @@ pub async fn run(
             },
             EngineArg::Model => match model.as_ref() {
                 Some(model) => match model.classify(&case.instruction).await {
-                    Ok((operation, clarify)) => score(
-                        plan_from_classifier(provider, &case.instruction, operation, clarify),
+                    Ok(classification) => score(
+                        planner::plan_from_classification(
+                            provider,
+                            &case.instruction,
+                            &classification,
+                        ),
                         case,
                         "model",
                     ),
@@ -162,22 +170,6 @@ pub async fn run(
     );
 
     Ok(if below { 5 } else { 0 })
-}
-
-fn plan_from_classifier(
-    provider: ProviderId,
-    instruction: &str,
-    operation: herald_core::Operation,
-    needs_clarification: bool,
-) -> ActionPlan {
-    ActionPlan {
-        provider,
-        operation,
-        target: rules::target_hint(instruction),
-        reply_body: rules::body_hint(instruction),
-        needs_clarification,
-        clarification_question: needs_clarification.then(|| "Which message do you mean?".into()),
-    }
 }
 
 fn score_rules(plan: Option<ActionPlan>, case: &EvalCase) -> Outcome {

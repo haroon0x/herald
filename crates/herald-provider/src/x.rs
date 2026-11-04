@@ -778,14 +778,28 @@ impl CommunicationProvider for XProvider {
         query: &MessageQuery,
     ) -> Result<Vec<MessageSummary>, ProviderError> {
         let mut slot = self.client.lock().await;
-        let result = self.list_recent_inner(&mut slot, query).await;
+        let mut result = self.list_recent_inner(&mut slot, query).await;
+        if matches!(result, Err(ProviderError::Timeout)) {
+            // Reads are safe to retry; a fresh browser is the only thing that
+            // recovers X's occasional never-rendered page.
+            tracing::debug!("X read timed out; recreating the browser and retrying once");
+            *slot = None;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            result = self.list_recent_inner(&mut slot, query).await;
+        }
         self.release(&mut slot).await;
         result
     }
 
     async fn get_thread(&self, id: &ThreadId) -> Result<Thread, ProviderError> {
         let mut slot = self.client.lock().await;
-        let result = self.get_thread_inner(&mut slot, id).await;
+        let mut result = self.get_thread_inner(&mut slot, id).await;
+        if matches!(result, Err(ProviderError::Timeout)) && resolve_target(id).is_ok() {
+            tracing::debug!("X thread timed out; recreating the browser and retrying once");
+            *slot = None;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            result = self.get_thread_inner(&mut slot, id).await;
+        }
         self.release(&mut slot).await;
         result
     }

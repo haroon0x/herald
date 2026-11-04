@@ -31,7 +31,7 @@ pub fn action_plan_schema() -> Value {
         "properties": {
             "provider": {
                 "type": "string",
-                "enum": ["gmail", "x", "fake"]
+                "enum": ["gmail", "x", "fake", "maildir"]
             },
             "operation": operation,
             "target": {

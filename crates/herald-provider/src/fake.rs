@@ -1,10 +1,15 @@
 //! Deterministic in-memory provider used by the MVP shell and integration tests.
 //!
 //! The fake provider is intentionally simple, but it enforces the same contract
-//! as a real adapter: stable ids, read-only prepare, verified send, and explicit
-//! failure modes.
+//! as a real adapter: stable ids, read-only prepare, verified idempotent send,
+//! and explicit failure modes.
+//!
+//! [`FakeProvider::with_state`] adds a small best-effort JSON ledger so a
+//! separate CLI process can reconcile a send that a previous process made.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -25,14 +30,22 @@ struct FakeThread {
     messages: Vec<ProviderMessage>,
 }
 
+type TokenLedger = BTreeMap<String, ExecutionReceipt>;
+
 /// In-memory provider with a small seeded inbox.
 #[derive(Debug)]
 pub struct FakeProvider {
     threads: Mutex<BTreeMap<String, FakeThread>>,
-    /// When set, the next send fails with this error after "reaching" the
-    /// provider, which exercises the `uncertain` path.
+    /// Client tokens this client already delivered, keyed by the action id.
+    sent: Mutex<TokenLedger>,
+    /// When set, the next send fails before delivery. This exercises `failed`.
     fail_next_send: Mutex<Option<ProviderError>>,
+    /// When set, the next send fails after delivery and after the token is
+    /// recorded. This exercises `uncertain` and the `find_sent` recovery path.
+    fail_next_send_after_delivery: Mutex<Option<ProviderError>>,
     signed_in: Mutex<bool>,
+    /// Optional best-effort ledger shared between CLI processes.
+    state_path: Option<PathBuf>,
 }
 
 impl FakeProvider {
@@ -87,8 +100,26 @@ impl FakeProvider {
 
         Self {
             threads: Mutex::new(threads),
+            sent: Mutex::new(TokenLedger::new()),
             fail_next_send: Mutex::new(None),
+            fail_next_send_after_delivery: Mutex::new(None),
             signed_in: Mutex::new(true),
+            state_path: None,
+        }
+    }
+
+    /// Construct a provider that persists its sent-token ledger at `path`.
+    ///
+    /// The ledger is only the `client_token -> ExecutionReceipt` map. Loading a
+    /// missing, unreadable, or malformed file silently falls back to an empty
+    /// ledger: reads and sends must not fail because of demo state.
+    #[must_use]
+    pub fn with_state(path: PathBuf) -> Self {
+        let sent = load_ledger(&path).unwrap_or_default();
+        Self {
+            sent: Mutex::new(sent),
+            state_path: Some(path),
+            ..Self::new()
         }
     }
 
@@ -96,8 +127,18 @@ impl FakeProvider {
         *self.signed_in.lock().unwrap() = false;
     }
 
+    /// Fail the next send before delivery. The token is not recorded, so a
+    /// retry delivers exactly once.
     pub fn fail_next_send(&self, error: ProviderError) {
         *self.fail_next_send.lock().unwrap() = Some(error);
+    }
+
+    /// Fail the next send after delivery and after the token is recorded.
+    ///
+    /// The caller sees an error (typically mapped to `uncertain`), but
+    /// [`CommunicationProvider::find_sent`] still recovers the receipt.
+    pub fn fail_next_send_after_delivery(&self, error: ProviderError) {
+        *self.fail_next_send_after_delivery.lock().unwrap() = Some(error);
     }
 
     fn ensure_signed_in(&self) -> Result<(), ProviderError> {
@@ -107,12 +148,42 @@ impl FakeProvider {
             Err(ProviderError::NotAuthenticated)
         }
     }
+
+    fn recorded_receipt(&self, client_token: &str) -> Option<ExecutionReceipt> {
+        self.sent.lock().unwrap().get(client_token).cloned()
+    }
+
+    /// Best-effort persistence. A failed write never changes the send result
+    /// and never panics.
+    fn save_ledger(&self) {
+        let Some(path) = self.state_path.as_deref() else {
+            return;
+        };
+        let ledger = self.sent.lock().unwrap().clone();
+        let _ = write_ledger(path, &ledger);
+    }
 }
 
 impl Default for FakeProvider {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn load_ledger(path: &Path) -> Option<TokenLedger> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn write_ledger(path: &Path, ledger: &TokenLedger) -> std::io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(ledger)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, path)
 }
 
 #[async_trait]
@@ -181,6 +252,7 @@ impl CommunicationProvider for FakeProvider {
         &self,
         id: &ThreadId,
         body: &str,
+        client_token: &str,
     ) -> Result<PreparedAction, ProviderError> {
         self.ensure_signed_in()?;
         if body.trim().is_empty() {
@@ -190,54 +262,95 @@ impl CommunicationProvider for FakeProvider {
         if !threads.contains_key(id.as_str()) {
             return Err(ProviderError::NotFound);
         }
-        Ok(PreparedAction::new(ProviderId::Fake, id.clone(), body))
+        Ok(PreparedAction::new(
+            ProviderId::Fake,
+            id.clone(),
+            body,
+            client_token,
+        ))
     }
 
     async fn send_reply(&self, action: &PreparedAction) -> Result<ExecutionReceipt, ProviderError> {
         self.ensure_signed_in()?;
 
-        // Simulate a send that reached the provider but whose response was lost.
+        // Idempotency: the token is recorded exactly once.
+        if let Some(receipt) = self.recorded_receipt(&action.client_token) {
+            return Ok(receipt);
+        }
+
+        // Fail-before-delivery: nothing is recorded, so a retry is safe.
         if let Some(error) = self.fail_next_send.lock().unwrap().take() {
             return Err(error);
         }
 
-        let mut threads = self.threads.lock().unwrap();
-        let thread = threads
-            .get_mut(action.thread_id.as_str())
-            .ok_or(ProviderError::NotFound)?;
-
-        let message_id = MessageId::new(format!("m-sent-{}", action.prepared_at_ms));
+        let message_id = MessageId::new(format!("m-sent-{}", action.client_token));
         let now = now_ms();
-        thread.messages.push(ProviderMessage {
-            id: message_id.clone(),
-            thread_id: action.thread_id.clone(),
-            sender: "me".into(),
-            subject: thread.subject.clone(),
-            body: Untrusted(action.body.clone()),
-            timestamp_ms: now,
-            unread: false,
-        });
+        let receipt = {
+            let mut threads = self.threads.lock().unwrap();
+            let thread = threads
+                .get_mut(action.thread_id.as_str())
+                .ok_or(ProviderError::NotFound)?;
 
-        // Re-read the thread to prove the message is really there.
-        let verified = thread
-            .messages
-            .iter()
-            .any(|message| message.id == message_id && message.body.as_ref() == action.body);
+            thread.messages.push(ProviderMessage {
+                id: message_id.clone(),
+                thread_id: action.thread_id.clone(),
+                sender: "me".into(),
+                subject: thread.subject.clone(),
+                body: Untrusted(action.body.clone()),
+                timestamp_ms: now,
+                unread: false,
+            });
 
-        Ok(ExecutionReceipt {
-            provider: ProviderId::Fake,
-            thread_id: action.thread_id.clone(),
-            provider_message_id: message_id,
-            body_hash: action.body_hash.clone(),
-            sent_at_ms: now,
-            verified,
-        })
+            // Re-read the thread to prove the message is really there.
+            let verified = thread
+                .messages
+                .iter()
+                .any(|message| message.id == message_id && message.body.as_ref() == action.body);
+
+            ExecutionReceipt {
+                provider: ProviderId::Fake,
+                thread_id: action.thread_id.clone(),
+                provider_message_id: message_id,
+                body_hash: action.body_hash.clone(),
+                sent_at_ms: now,
+                verified,
+            }
+        };
+
+        self.sent
+            .lock()
+            .unwrap()
+            .insert(action.client_token.clone(), receipt.clone());
+        self.save_ledger();
+
+        // Delivered, recorded, and reconciled by `find_sent`; the caller still
+        // sees the failure so the action becomes `uncertain`, never success.
+        if let Some(error) = self.fail_next_send_after_delivery.lock().unwrap().take() {
+            return Err(error);
+        }
+
+        Ok(receipt)
+    }
+
+    async fn find_sent(
+        &self,
+        _thread: &ThreadId,
+        client_token: &str,
+    ) -> Result<Option<ExecutionReceipt>, ProviderError> {
+        self.ensure_signed_in()?;
+        Ok(self.recorded_receipt(client_token))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn prepared(provider: &FakeProvider, thread: &str, body: &str, token: &str) -> PreparedAction {
+        // Tests are sync over the async trait; call the constructor directly.
+        let _ = provider;
+        PreparedAction::new(ProviderId::Fake, ThreadId::new(thread), body, token)
+    }
 
     #[tokio::test]
     async fn lists_unread_only() {
@@ -254,7 +367,11 @@ mod tests {
     async fn sends_and_verifies() {
         let provider = FakeProvider::new();
         let prepared = provider
-            .prepare_reply(&ThreadId::new("t-founder"), "Thanks, I'm interested.")
+            .prepare_reply(
+                &ThreadId::new("t-founder"),
+                "Thanks, I'm interested.",
+                "token-1",
+            )
             .await
             .unwrap();
         let receipt = provider.send_reply(&prepared).await.unwrap();
@@ -262,16 +379,104 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_send_does_not_duplicate() {
+    async fn same_token_sends_only_once() {
+        let provider = FakeProvider::new();
+        let prepared = prepared(&provider, "t-founder", "hello", "token-1");
+        let first = provider.send_reply(&prepared).await.unwrap();
+        let second = provider.send_reply(&prepared).await.unwrap();
+        assert_eq!(first, second);
+
+        let thread = provider
+            .get_thread(&ThreadId::new("t-founder"))
+            .await
+            .unwrap();
+        assert_eq!(
+            thread
+                .messages
+                .iter()
+                .filter(|message| message.id.as_str() == "m-sent-token-1")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn fail_before_delivery_then_retry_delivers_once() {
         let provider = FakeProvider::new();
         let prepared = provider
-            .prepare_reply(&ThreadId::new("t-sam"), "yes")
+            .prepare_reply(&ThreadId::new("t-sam"), "yes", "token-2")
             .await
             .unwrap();
         provider.fail_next_send(ProviderError::Timeout);
-        assert!(provider.send_reply(&prepared).await.is_err());
+        assert_eq!(
+            provider.send_reply(&prepared).await.unwrap_err(),
+            ProviderError::Timeout
+        );
+        assert!(
+            provider
+                .find_sent(&prepared.thread_id, "token-2")
+                .await
+                .unwrap()
+                .is_none()
+        );
+
         let receipt = provider.send_reply(&prepared).await.unwrap();
         assert!(receipt.verified);
+        let thread = provider.get_thread(&ThreadId::new("t-sam")).await.unwrap();
+        assert_eq!(
+            thread
+                .messages
+                .iter()
+                .filter(|message| message.id.as_str() == "m-sent-token-2")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn fail_after_delivery_is_recovered_by_find_sent() {
+        let provider = FakeProvider::new();
+        let prepared = provider
+            .prepare_reply(&ThreadId::new("t-sam"), "yes", "token-3")
+            .await
+            .unwrap();
+        provider.fail_next_send_after_delivery(ProviderError::Timeout);
+        assert_eq!(
+            provider.send_reply(&prepared).await.unwrap_err(),
+            ProviderError::Timeout
+        );
+
+        let found = provider
+            .find_sent(&prepared.thread_id, "token-3")
+            .await
+            .unwrap()
+            .expect("delivered message must be recoverable");
+        assert!(found.verified);
+        assert_eq!(found.body_hash, prepared.body_hash);
+
+        // A retry after the ambiguous failure must not deliver twice.
+        assert_eq!(provider.send_reply(&prepared).await.unwrap(), found);
+        let thread = provider.get_thread(&ThreadId::new("t-sam")).await.unwrap();
+        assert_eq!(
+            thread
+                .messages
+                .iter()
+                .filter(|message| message.id.as_str() == "m-sent-token-3")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn find_sent_returns_none_for_unknown_token() {
+        let provider = FakeProvider::new();
+        assert!(
+            provider
+                .find_sent(&ThreadId::new("t-sam"), "nope")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -281,10 +486,59 @@ mod tests {
         assert_eq!(provider.health().await, ProviderHealth::NotAuthenticated);
         assert_eq!(
             provider
-                .prepare_reply(&ThreadId::new("t-sam"), "hi")
+                .prepare_reply(&ThreadId::new("t-sam"), "hi", "token-4")
                 .await
                 .unwrap_err(),
             ProviderError::NotAuthenticated
         );
+    }
+
+    #[tokio::test]
+    async fn ledger_survives_a_new_provider_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("demo-provider.json");
+
+        let receipt = {
+            let provider = FakeProvider::with_state(path.clone());
+            let prepared = provider
+                .prepare_reply(&ThreadId::new("t-founder"), "persisted", "token-5")
+                .await
+                .unwrap();
+            provider.send_reply(&prepared).await.unwrap()
+        };
+
+        let provider = FakeProvider::with_state(path);
+        let found = provider
+            .find_sent(&ThreadId::new("t-founder"), "token-5")
+            .await
+            .unwrap()
+            .expect("ledger must survive the process boundary");
+        assert_eq!(found, receipt);
+
+        let prepared = prepared(&provider, "t-founder", "persisted", "token-5");
+        assert_eq!(provider.send_reply(&prepared).await.unwrap(), receipt);
+        let thread = provider
+            .get_thread(&ThreadId::new("t-founder"))
+            .await
+            .unwrap();
+        // The fresh instance has fresh seeded threads; an early return from the
+        // ledger must not append a new message there.
+        assert_eq!(
+            thread
+                .messages
+                .iter()
+                .filter(|message| message.id.as_str() == "m-sent-token-5")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn a_malformed_ledger_does_not_break_construction() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("demo-provider.json");
+        fs::write(&path, b"not json").unwrap();
+        let provider = FakeProvider::with_state(path);
+        assert!(provider.recorded_receipt("token-5").is_none());
     }
 }

@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS actions (
     provider TEXT NOT NULL,
     operation TEXT NOT NULL,
     target TEXT NOT NULL,
+    target_json TEXT,
+    thread_id TEXT,
     content_hash TEXT,
     state TEXT NOT NULL,
     created_at INTEGER NOT NULL,
@@ -46,3 +48,19 @@ CREATE TABLE IF NOT EXISTS preferences (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Bodies are retained only while an approval is pending. The row is deleted
+-- when the action is approved, rejected, expires, or fails closed.
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    action_id  TEXT PRIMARY KEY REFERENCES actions(action_id) ON DELETE CASCADE,
+    provider   TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    thread_id  TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    body_hash  TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_approvals_expiry
+    ON pending_approvals (expires_at);

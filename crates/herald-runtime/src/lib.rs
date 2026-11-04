@@ -3,8 +3,13 @@
 //! Herald manages its own pinned `llama-server` child process. It binds to
 //! loopback only, uses a random per-run token, and never requires the user to
 //! install Ollama or a Python stack.
+//!
+//! The [`Inference`] port keeps the model tier testable and usable without a
+//! bundled binary. [`LlamaSidecar`] remains the default; [`OpenAiClient`] is an
+//! explicit opt-in for an already-installed local OpenAI-compatible endpoint.
 
 pub mod download;
+pub mod inference;
 pub mod manifest;
 pub mod sidecar;
 
@@ -36,9 +41,12 @@ pub enum RuntimeError {
     StartupTimeout,
     #[error("the inference server returned an invalid response: {0}")]
     BadResponse(String),
+    #[error("inference is not configured: {0}")]
+    NotConfigured(String),
 }
 
 pub use download::{DownloadStats, download_model, download_url};
+pub use inference::{Inference, OpenAiClient};
 pub use manifest::ModelManifest;
 pub use sidecar::{
     ChatMessage, LlamaSidecar, SidecarConfig, binary_from_env, free_loopback_port, model_path,

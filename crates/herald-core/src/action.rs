@@ -77,7 +77,7 @@ pub enum Target {
     Description { description: String },
     /// A thread id supplied by the app or a prior tool result, never guessed.
     Thread { thread_id: ThreadId },
-    /// "The latest message from <sender>", resolved by Rust.
+    /// The latest message from `sender`, resolved by Rust.
     LatestFrom { sender: String },
 }
 

@@ -4,6 +4,7 @@
 //! "click anything", "run JavaScript", or arbitrary page control to the planner.
 
 pub mod fake;
+pub mod maildir;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,10 @@ pub enum ProviderHealth {
 }
 
 /// A provider-side draft that has not been sent.
+///
+/// `client_token` is the action id: the stable idempotency key for exactly one
+/// delivery attempt. Providers that store sent messages use it to recognize a
+/// retry instead of delivering the same reply twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreparedAction {
     pub provider: ProviderId,
@@ -28,11 +33,18 @@ pub struct PreparedAction {
     pub body: String,
     pub body_hash: String,
     pub prepared_at_ms: i64,
+    /// Stable idempotency key for this attempt (the action id).
+    pub client_token: String,
 }
 
 impl PreparedAction {
     #[must_use]
-    pub fn new(provider: ProviderId, thread_id: ThreadId, body: impl Into<String>) -> Self {
+    pub fn new(
+        provider: ProviderId,
+        thread_id: ThreadId,
+        body: impl Into<String>,
+        client_token: impl Into<String>,
+    ) -> Self {
         let body = body.into();
         Self {
             provider,
@@ -40,6 +52,7 @@ impl PreparedAction {
             body_hash: body_hash(&body),
             body,
             prepared_at_ms: herald_core::time::now_ms(),
+            client_token: client_token.into(),
         }
     }
 }
@@ -53,6 +66,10 @@ pub struct ExecutionReceipt {
     pub body_hash: String,
     pub sent_at_ms: i64,
     /// The adapter must re-read the thread and confirm the message is present.
+    ///
+    /// `false` means "delivered but not confirmed" (for example, SMTP accepted
+    /// the message but the local Sent copy could not be written). Callers map
+    /// that to `uncertain`, never to success.
     pub verified: bool,
 }
 
@@ -60,12 +77,19 @@ pub struct ExecutionReceipt {
 pub enum ProviderError {
     #[error("message or thread not found")]
     NotFound,
-    #[error("the dedicated profile is not signed in")]
+    #[error("the provider is not signed in")]
     NotAuthenticated,
+    /// The provider exists but cannot perform this operation as configured.
+    ///
+    /// For a maildir this means the mailbox is read-only because no SMTP
+    /// transport is configured.
+    #[error("provider is not configured: {0}")]
+    NotConfigured(String),
     #[error("provider UI did not match expectations: {0}")]
     UnexpectedLayout(String),
     #[error("provider rate limited the request")]
     RateLimited,
+    /// Delivery may or may not have happened. Never blind-retry.
     #[error("provider request timed out")]
     Timeout,
     #[error("operation is not supported by this provider")]
@@ -91,9 +115,24 @@ pub trait CommunicationProvider: Send + Sync {
         &self,
         id: &ThreadId,
         body: &str,
+        client_token: &str,
     ) -> Result<PreparedAction, ProviderError>;
 
-    /// Send a previously prepared action. Implementations must re-resolve the
-    /// thread and verify the result; they must not blind-retry on timeout.
+    /// Send a previously prepared action.
+    ///
+    /// Implementations must be idempotent on `action.client_token`: a second
+    /// call with the same token returns the receipt for the first delivery
+    /// instead of sending again. They must re-resolve the thread and verify the
+    /// result, and must not blind-retry on timeout.
     async fn send_reply(&self, action: &PreparedAction) -> Result<ExecutionReceipt, ProviderError>;
+
+    /// Return the receipt for a message this client already delivered, if any.
+    ///
+    /// This is the reconciliation path for an `uncertain` send. It never
+    /// sends.
+    async fn find_sent(
+        &self,
+        thread: &ThreadId,
+        client_token: &str,
+    ) -> Result<Option<ExecutionReceipt>, ProviderError>;
 }

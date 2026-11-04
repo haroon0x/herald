@@ -5,22 +5,36 @@ use std::fmt;
 ///
 /// This is deliberately a closed enum. The planner cannot invent a provider;
 /// adding one is a code change that goes through review.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderId {
     Gmail,
     X,
     Fake,
+    Maildir,
 }
 
 impl ProviderId {
+    /// Every provider this build knows about, implemented or planned.
+    pub const ALL: [Self; 4] = [Self::Fake, Self::Maildir, Self::Gmail, Self::X];
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Gmail => "gmail",
             Self::X => "x",
             Self::Fake => "fake",
+            Self::Maildir => "maildir",
         }
+    }
+
+    /// Whether this build contains an executable adapter for the provider.
+    ///
+    /// Planned providers still parse and plan, so the CLI can explain that the
+    /// plan is inert instead of pretending a read happened.
+    #[must_use]
+    pub const fn is_implemented(self) -> bool {
+        matches!(self, Self::Fake | Self::Maildir)
     }
 }
 
@@ -37,7 +51,8 @@ impl std::str::FromStr for ProviderId {
         match value {
             "gmail" => Ok(Self::Gmail),
             "x" => Ok(Self::X),
-            "fake" => Ok(Self::Fake),
+            "fake" | "demo" => Ok(Self::Fake),
+            "maildir" => Ok(Self::Maildir),
             other => Err(format!("unknown provider: {other}")),
         }
     }
@@ -159,5 +174,25 @@ mod tests {
     #[test]
     fn unknown_provider_is_rejected() {
         assert!("myspace".parse::<ProviderId>().is_err());
+    }
+
+    #[test]
+    fn demo_is_an_alias_for_the_fake_provider() {
+        assert_eq!("demo".parse::<ProviderId>().unwrap(), ProviderId::Fake);
+    }
+
+    #[test]
+    fn maildir_is_a_real_provider() {
+        assert_eq!(
+            "maildir".parse::<ProviderId>().unwrap(),
+            ProviderId::Maildir
+        );
+        assert!(ProviderId::Maildir.is_implemented());
+    }
+
+    #[test]
+    fn planned_providers_are_marked_as_such() {
+        assert!(!ProviderId::Gmail.is_implemented());
+        assert!(!ProviderId::X.is_implemented());
     }
 }

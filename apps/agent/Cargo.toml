@@ -11,6 +11,7 @@ name = "herald"
 path = "src/main.rs"
 
 [dependencies]
+herald-config.workspace = true
 herald-core.workspace = true
 herald-provider.workspace = true
 herald-runtime.workspace = true
@@ -18,12 +19,20 @@ herald-storage.workspace = true
 
 anyhow = "1"
 clap.workspace = true
-directories.workspace = true
+clap_complete = "4"
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
 
 [lints]
 workspace = true

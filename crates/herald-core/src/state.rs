@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// Lifecycle of a write action.
 ///
-/// `Uncertain` is the important state: a browser timeout may mean the message
-/// was sent. Reconciliation must resolve it before any retry.
+/// `Uncertain` is the important state: an SMTP or provider timeout may mean the
+/// message was sent. Reconciliation must resolve it before any retry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionState {
@@ -13,6 +13,7 @@ pub enum ActionState {
     Succeeded,
     Failed,
     Uncertain,
+    Cancelled,
 }
 
 impl ActionState {
@@ -25,12 +26,13 @@ impl ActionState {
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
             Self::Uncertain => "uncertain",
+            Self::Cancelled => "cancelled",
         }
     }
 
     #[must_use]
     pub const fn is_terminal(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed)
+        matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
 
     /// Returns the next state or an error for an illegal transition.
@@ -39,13 +41,14 @@ impl ActionState {
             (self, next),
             (
                 Self::Planned,
-                Self::AwaitingApproval | Self::Executing | Self::Failed
-            ) | (Self::AwaitingApproval, Self::Executing | Self::Failed)
-                | (
-                    Self::Executing,
-                    Self::Succeeded | Self::Failed | Self::Uncertain
-                )
-                | (Self::Uncertain, Self::Succeeded | Self::Failed)
+                Self::AwaitingApproval | Self::Executing | Self::Failed | Self::Cancelled
+            ) | (
+                Self::AwaitingApproval,
+                Self::Executing | Self::Failed | Self::Cancelled
+            ) | (
+                Self::Executing,
+                Self::Succeeded | Self::Failed | Self::Uncertain
+            ) | (Self::Uncertain, Self::Succeeded | Self::Failed)
         );
 
         if allowed {
@@ -70,6 +73,7 @@ impl std::str::FromStr for ActionState {
             "succeeded" => Ok(Self::Succeeded),
             "failed" => Ok(Self::Failed),
             "uncertain" => Ok(Self::Uncertain),
+            "cancelled" => Ok(Self::Cancelled),
             other => Err(format!("unknown action state: {other}")),
         }
     }
@@ -133,6 +137,40 @@ mod tests {
         assert!(
             ActionState::AwaitingApproval
                 .transition(ActionState::Succeeded)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_pending_approval_can_be_cancelled() {
+        let state = ActionState::AwaitingApproval
+            .transition(ActionState::Cancelled)
+            .unwrap();
+        assert_eq!(state, ActionState::Cancelled);
+        assert!(state.is_terminal());
+    }
+
+    #[test]
+    fn cancelled_is_terminal_and_cannot_resume() {
+        assert!(
+            ActionState::Cancelled
+                .transition(ActionState::Executing)
+                .is_err()
+        );
+        assert!(
+            ActionState::Cancelled
+                .transition(ActionState::Succeeded)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn executing_cannot_be_cancelled_silently() {
+        // Once a send may have reached the provider, the only legal outcomes
+        // are success, failure, or `uncertain` followed by reconciliation.
+        assert!(
+            ActionState::Executing
+                .transition(ActionState::Cancelled)
                 .is_err()
         );
     }

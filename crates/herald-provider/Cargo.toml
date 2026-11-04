@@ -1,6 +1,6 @@
 [package]
 name = "herald-provider"
-description = "Provider capability trait and fake provider for Herald"
+description = "Provider capability trait, fake provider, and local maildir adapter for Herald"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,9 +11,19 @@ herald-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+mail-parser = "1.0"
+lettre = { version = "0.11", default-features = false, features = [
+    "builder",
+    "smtp-transport",
+    "rustls-tls",
+    "pool",
+] }
 
 [dev-dependencies]
 tokio.workspace = true
+tempfile = "3"
 
 [lints]
 workspace = true

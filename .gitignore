@@ -1,5 +1,7 @@
 /target
 /data
+# Local Cargo home used for offline/sandboxed builds.
+/.cargo-home/
 /models/*.gguf
 /profiles
 *.sqlite

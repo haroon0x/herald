@@ -150,6 +150,8 @@ pub enum MessageScope {
     Mentions,
     /// Private conversations.
     Dms,
+    /// Account notifications (likes, reposts, follows, system notices).
+    Notifications,
 }
 
 /// Query used by read-only provider operations.

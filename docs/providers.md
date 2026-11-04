@@ -320,12 +320,18 @@ result to.
 | `timeline` | The compose surface. Not a conversation, identifies no recipient | Post only |
 
 `list_recent` honours a read scope: `all` merges the mentions tab and the DM
-list, `mentions` reads only mentions, `feed` reads the home timeline, and `dms`
-reads only conversations. Results are newest first and honour `--unread`,
-`search`, and `limit`. The home timeline and status pages are verified against
-the live DOM; the DM conversation list is not: X renders DMs in an embedded
+list, `mentions` reads only mentions, `feed` reads the home timeline, `dms`
+reads only conversations, and `notifications` reads the notifications tab
+(likes, reposts, follows, system notices). Results are newest first and honour `--unread`,
+`search`, and `limit`. The home timeline, notifications, and status pages are verified against the
+live DOM; the DM conversation list is not: X renders DMs in an embedded
 `xchat` app whose conversation DOM is not in the page snapshot, so `dms` reports
 nothing rather than guessing.
+
+Notification entries are display-only. When one carries an underlying status
+the thread id points at `mention:<status_id>`; otherwise it is a
+`notification:<hash>` id that `get_thread` refuses. There is no reply surface
+for a follow or a system notice, and Herald does not invent one.
 
 Unread is **local**: X exposes no reliable unread state in the DOM, so the
 adapter keeps a bounded seen-ledger at `<data-dir>/x-seen.json` and

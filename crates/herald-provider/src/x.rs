@@ -53,6 +53,8 @@ pub const HOME_URL: &str = "https://x.com/home";
 pub const MENTIONS_URL: &str = "https://x.com/notifications/mentions";
 /// Direct-message list.
 pub const MESSAGES_URL: &str = "https://x.com/messages";
+/// All notifications (mentions live on their own tab).
+pub const NOTIFICATIONS_URL: &str = "https://x.com/notifications";
 /// Login entry point. Only `login` navigates here.
 pub const LOGIN_URL: &str = "https://x.com/login";
 
@@ -83,6 +85,10 @@ const SEL_POST_BUTTON: &str = r#"div[data-testid="tweetButtonInline"]"#;
 const SEL_DM_COMPOSER: &str = r#"div[data-testid="dmComposerTextInput"]"#;
 /// DM send button.
 const SEL_DM_SEND_BUTTON: &str = r#"div[data-testid="dmComposerSendButton"]"#;
+/// One notification cell on the notifications tab.
+const SEL_NOTIFICATION: &str = r#"[data-testid="notification"]"#;
+/// The action phrase ("liked your post", "followed you") inside a notification.
+const SEL_NOTIFICATION_TEXT: &str = r#"div[data-testid="app-text-transition-container"]"#;
 /// Login form. Its presence means the profile is signed out.
 const SEL_LOGIN_FORM: &str = r#"input[name="text"]"#;
 /// Main column of an authenticated page.
@@ -460,6 +466,13 @@ impl XProvider {
             MessageScope::Dms => {
                 client.open(MESSAGES_URL).await?;
                 parse_dm_list(&client.html().await?)?
+            }
+            MessageScope::Notifications => {
+                client.open(NOTIFICATIONS_URL).await?;
+                // The notifications DOM is present as soon as the page paints;
+                // waiting on a selector here times out even when the cards are
+                // in the serialized document, so parse what rendered.
+                parse_notifications(&client.html().await?)?
             }
             MessageScope::All => {
                 client.open(MENTIONS_URL).await?;
@@ -977,6 +990,112 @@ pub fn parse_mentions(html: &str) -> Result<Vec<XItem>, ProviderError> {
     Ok(items)
 }
 
+/// Parse the notifications tab into summaries.
+///
+/// Notifications are not conversations. When one carries an underlying status
+/// the thread id points at that status; otherwise it is a display-only
+/// `notification:<hash>` id that `get_thread` will refuse.
+pub fn parse_notifications(html: &str) -> Result<Vec<XItem>, ProviderError> {
+    let doc = scraper::Html::parse_document(html);
+    guard_page(&doc)?;
+    let cells = selector(SEL_NOTIFICATION)?;
+    let mut items = Vec::new();
+    tracing::debug!(cells = doc.select(&cells).count(), "parsed X notifications");
+    for cell in doc.select(&cells) {
+        let timestamp_ms = element_timestamp(&cell).unwrap_or(0);
+        let actor = avatar_handle(&cell)
+            .or_else(|| first_profile_handle(&cell))
+            .unwrap_or_else(|| "unknown".to_string());
+        let quoted = element_text(&cell, SEL_TWEET_TEXT).unwrap_or_default();
+        let action = notification_action(&cell, &quoted);
+        let status_id = cell
+            .select(&selector(SEL_STATUS_LINK)?)
+            .filter_map(|link| link.value().attr("href"))
+            .find_map(status_id_from_href);
+
+        let subject = format!("{actor} {action}");
+        let hash = short_hash(&format!("{actor}|{action}|{timestamp_ms}"));
+        let (id, thread_id) = if let Some(status) = status_id {
+            (
+                MessageId::new(format!("notification:{hash}")),
+                ThreadId::new(format!("mention:{status}")),
+            )
+        } else {
+            let synthetic = format!("notification:{hash}");
+            (MessageId::new(synthetic.clone()), ThreadId::new(synthetic))
+        };
+        items.push(XItem {
+            id,
+            thread_id,
+            sender: actor,
+            subject,
+            body: Untrusted(quoted),
+            timestamp_ms,
+        });
+    }
+    Ok(items)
+}
+
+/// The action phrase ("liked your post", "followed you", "We received your
+/// report.") from a notification cell. X has no stable hook for this text, so
+/// strip the quoted post and the trailing relative time and keep the phrase
+/// that names what happened.
+fn notification_action(cell: &scraper::ElementRef<'_>, quoted: &str) -> String {
+    const VERBS: [&str; 9] = [
+        "liked your",
+        "reposted your",
+        "quoted your",
+        "replied to",
+        "mentioned you",
+        "followed you",
+        "added you",
+        "posted",
+        "We received your report",
+    ];
+
+    let mut text = cell
+        .text()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !quoted.is_empty() {
+        text = text.replace(quoted, " ");
+    }
+    let lower = text.to_lowercase();
+    let start = VERBS
+        .iter()
+        .filter_map(|verb| lower.find(&verb.to_lowercase()))
+        .min()
+        .unwrap_or(0);
+    let phrase = text.get(start..).unwrap_or(&text);
+    let phrase = phrase.split('·').next().unwrap_or(phrase).trim();
+    if phrase.is_empty() {
+        element_text(cell, SEL_NOTIFICATION_TEXT).unwrap_or_else(|| "notification".to_string())
+    } else {
+        phrase.to_string()
+    }
+}
+
+fn first_profile_handle(element: &scraper::ElementRef<'_>) -> Option<String> {
+    let links = selector(r#"a[href^="/"]"#).ok()?;
+    element.select(&links).find_map(|link| {
+        let href = link.value().attr("href")?;
+        let handle = href.strip_prefix('/')?;
+        if handle.is_empty() || handle.contains('/') {
+            return None;
+        }
+        handle_token(&format!("@{handle}"))
+    })
+}
+
+fn short_hash(value: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+    let digest = Sha256::digest(value.as_bytes());
+    format!("{digest:x}").chars().take(16).collect()
+}
+
 /// Parse the home timeline. Promoted or truncated cards without a status
 /// permalink are skipped rather than invented; a page with no timeline at all
 /// is still a layout failure.
@@ -1216,22 +1335,18 @@ fn element_timestamp(element: &scraper::ElementRef<'_>) -> Option<i64> {
     parse_iso8601_ms(node.value().attr("datetime")?)
 }
 
-fn dm_sender(message: &scraper::ElementRef<'_>) -> Option<String> {
+fn avatar_handle(element: &scraper::ElementRef<'_>) -> Option<String> {
     let selector = selector(SEL_DM_AVATAR).ok()?;
-    let avatar = message.select(&selector).next()?;
+    let avatar = element.select(&selector).next()?;
     let raw = avatar
         .value()
         .attr("data-testid")?
         .strip_prefix("UserAvatar-Container-")?;
-    let handle: String = raw
-        .chars()
-        .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
-        .collect();
-    if handle.is_empty() {
-        None
-    } else {
-        Some(format!("@{handle}"))
-    }
+    handle_token(&format!("@{raw}"))
+}
+
+fn dm_sender(message: &scraper::ElementRef<'_>) -> Option<String> {
+    avatar_handle(message)
 }
 
 fn selector(css: &'static str) -> Result<scraper::Selector, ProviderError> {
@@ -1926,6 +2041,25 @@ mod tests {
         </article>
     </div></body></html>"#;
 
+    const NOTIFICATIONS_HTML: &str = r#"<html><body><div data-testid="primaryColumn">
+        <div data-testid="notification">
+          <div data-testid="UserAvatar-Container-alice"></div>
+          <div data-testid="app-text-transition-container">liked your post</div>
+          <div data-testid="tweetText">A post worth liking</div>
+          <a href="/alice/status/777">Nov 4</a>
+          <time datetime="2026-11-04T10:00:00.000Z"></time>
+        </div>
+        <div data-testid="notification">
+          <div data-testid="UserAvatar-Container-bob"></div>
+          <div data-testid="app-text-transition-container">followed you</div>
+          <time datetime="2026-11-04T09:00:00.000Z"></time>
+        </div>
+        <div data-testid="notification">
+          <div>We received your report.</div>
+          <time datetime="2026-11-04T08:00:00.000Z"></time>
+        </div>
+    </div></body></html>"#;
+
     const COMPOSE_HTML: &str = r#"<html><body><div data-testid="primaryColumn">
         <div data-testid="tweetTextarea_0" contenteditable="true"></div>
         <div data-testid="tweetButtonInline" role="button">Post</div>
@@ -2175,6 +2309,19 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id.as_str(), "mention:901");
         assert_eq!(items[1].sender, "@me");
+    }
+
+    #[test]
+    fn notifications_parse_into_stable_display_items() {
+        let items = parse_notifications(NOTIFICATIONS_HTML).unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].sender, "@alice");
+        assert!(items[0].subject.contains("liked your post"));
+        assert_eq!(items[0].thread_id.as_str(), "mention:777");
+        assert_eq!(items[0].body.as_ref(), "A post worth liking");
+        assert_eq!(items[1].sender, "@bob");
+        assert!(items[1].thread_id.as_str().starts_with("notification:"));
+        assert_eq!(items[2].sender, "unknown");
     }
 
     #[tokio::test]

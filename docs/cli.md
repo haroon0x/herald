@@ -313,7 +313,7 @@ Dry run: no action was recorded and no provider was changed.
 ### `herald inbox`
 
 ```text
-herald inbox [--scope all|feed|mentions|dms] [--unread] [--limit N] [--provider P]
+herald inbox [--scope all|feed|mentions|dms|notifications] [--unread] [--limit N] [--provider P]
 ```
 
 Lists recent messages. Default limit 10 and default scope `all` (for X:

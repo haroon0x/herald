@@ -47,7 +47,8 @@ not as released behaviour until the canary in the milestone handoff passes.
   Herald's own browser no longer passes `--enable-automation`.
 - Live X reads verified against a signed-in profile: mentions, status threads,
   and the home timeline parse real posts and replies with stable ids and
-  timestamps. `herald inbox --scope feed` reads the home feed. The DM
+  timestamps. `herald inbox --scope feed` reads the home feed and `--scope notifications`
+reads likes, reposts, follows, and system notices. The DM
   conversation list is still unverified and reports nothing rather than
   guessing. Home feed, richer notifications, and a GUI are on the roadmap.
 - `ProviderId::X` is now implemented. `herald providers` performs a real

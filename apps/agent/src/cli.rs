@@ -167,6 +167,7 @@ pub enum ScopeArg {
     Feed,
     Mentions,
     Dms,
+    Notifications,
 }
 
 impl From<ScopeArg> for herald_core::MessageScope {
@@ -176,6 +177,7 @@ impl From<ScopeArg> for herald_core::MessageScope {
             ScopeArg::Feed => Self::Feed,
             ScopeArg::Mentions => Self::Mentions,
             ScopeArg::Dms => Self::Dms,
+            ScopeArg::Notifications => Self::Notifications,
         }
     }
 }

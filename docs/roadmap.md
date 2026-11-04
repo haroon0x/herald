@@ -85,8 +85,9 @@ These are requested and tracked, not shipped:
 
 - **Home feed reads.** Shipped as `herald inbox --provider x --scope feed`
   (read-only, home timeline as its own scope).
-- **Notifications beyond mentions.** Likes, reposts, follows, and system
-  notices, still parsed as untrusted text.
+- **Notifications beyond mentions.** Shipped as
+  `herald inbox --provider x --scope notifications` (likes, reposts, follows,
+  system notices; display-only when there is no underlying status).
 - **DM list selectors.** X now renders DMs in an embedded `xchat` app whose
   conversation DOM is not in the page snapshot. Mentions, status threads, and
   the home feed are verified against the live DOM; DMs report nothing until

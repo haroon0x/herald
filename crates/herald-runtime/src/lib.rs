@@ -42,6 +42,8 @@ pub enum RuntimeError {
     StartupTimeout,
     #[error("the inference server returned an invalid response: {0}")]
     BadResponse(String),
+    #[error("the model process failed: {0}")]
+    ModelProcess(String),
     #[error("inference is not configured: {0}")]
     NotConfigured(String),
 }

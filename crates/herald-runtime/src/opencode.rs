@@ -92,7 +92,7 @@ impl OpenCodeInference {
         let output = tokio::time::timeout(self.timeout, command.output())
             .await
             .map_err(|_| {
-                RuntimeError::BadResponse(format!(
+                RuntimeError::ModelProcess(format!(
                     "opencode did not answer within {}s",
                     self.timeout.as_secs()
                 ))
@@ -107,7 +107,7 @@ impl OpenCodeInference {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(RuntimeError::BadResponse(format!(
+            return Err(RuntimeError::ModelProcess(format!(
                 "opencode exited with {}: {}",
                 output.status,
                 tail(&stderr, MAX_ERROR_TAIL_CHARS)
@@ -130,10 +130,10 @@ impl Inference for OpenCodeInference {
         let prompt = format!("{system}\n\n{user}\n\nReply with one JSON object and nothing else.");
         let raw = self.run(&prompt).await?;
         let json = slice_json_object(&strip_opencode_banner(&raw)).ok_or_else(|| {
-            RuntimeError::BadResponse("opencode did not return a JSON object".into())
+            RuntimeError::ModelProcess("opencode did not return a JSON object".into())
         })?;
         serde_json::from_str::<Value>(&json).map_err(|error| {
-            RuntimeError::BadResponse(format!("opencode returned invalid JSON: {error}"))
+            RuntimeError::ModelProcess(format!("opencode returned invalid JSON: {error}"))
         })?;
         Ok(json)
     }
@@ -148,7 +148,7 @@ impl Inference for OpenCodeInference {
         let raw = self.run(&prompt).await?;
         let text = strip_opencode_banner(&raw);
         if text.trim().is_empty() {
-            return Err(RuntimeError::BadResponse(
+            return Err(RuntimeError::ModelProcess(
                 "opencode returned no text".to_string(),
             ));
         }
@@ -302,10 +302,10 @@ mod tests {
 
         let backend = OpenCodeInference::new(script, DEFAULT_MODEL, dir.path().join("sandbox"));
         match backend.complete_text("system", "user", 64).await {
-            Err(RuntimeError::BadResponse(message)) => {
+            Err(RuntimeError::ModelProcess(message)) => {
                 assert!(message.contains("free usage limit reached"));
             }
-            other => panic!("expected BadResponse, got {other:?}"),
+            other => panic!("expected ModelProcess, got {other:?}"),
         }
     }
 }

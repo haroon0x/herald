@@ -237,23 +237,36 @@ Steps:
    and a count of cases where the model's target beats the regex.
 6. Go/no-go for 3/10.
 
-Measurement attempted 2026-11-04; it does not satisfy the gate. The pinned
-Qwen3.5-0.8B is not installed on the measuring machine (`llama-server` is
-absent and the models directory holds only the manifest), and the `opencode`
-free pool answered "Free usage limit reached" for every free model id. The only
-reachable backend was a local `qwen2.5:0.5b` through Ollama. That is a
-different and smaller model, so the run is a parser and grammar data point, not
-a 2/10 result.
+Measured 2026-11-04 on the pinned Qwen3.5-0.8B (`llama-server` build 12098,
+CPU, 4 threads): 26/45, all 45 answers parsed, no retries, 216 s. That is below
+the 32/42 v1.0 baseline, so the gate stays open.
 
-On it, all 45 answers parsed with all four fields present and no retries, and 4
-of the 5 `target_contains` cases were satisfied by the model's phrase where the
-regex had nothing ("the latest email from the founder", "latest message from
-Sam"). The score was still 11/45 because the flag collapses to `true`: 32 of
-the 34 non-clarification cases were deferred. Two targets also came back as the
-`/no_think` marker echoed verbatim.
+The failure mode changed. The flag no longer collapses: there is one false
+positive, and three of the eleven clarification cases are caught. Every
+`create_post` case is read as a reply or a draft, and
+`inject-follow-instructions` plans a send. Of the five `target_contains` cases,
+the three that reached target scoring matched; the other two failed on the
+operation before the phrase was compared.
 
-The gate stays open. It needs the pinned 0.8B, and the 20-target human review
-is still pending.
+Getting to that number took a plumbing fix, and it belongs in the result. The
+sidecar started `llama-server` without `--jinja` and never turned thinking off,
+so the model spent each request's 512-token budget inside its reasoning block
+and returned empty `content`. The schema constrained nothing, 6 of the first 21
+cases failed to parse, and every parse failure was retried with an identical
+temperature-0 request, which could only reproduce itself. On the same machine
+the fix takes one classify from ~50 s with no JSON to ~3 s with a schema-valid
+object.
+
+Decoding is ~23 tokens per second here (2 physical cores, 2 threads matches 4
+threads; more oversubscribes and is slower), so one case costs ~2.4 s of
+generation. The score is limited by the model, not by the harness.
+
+An earlier attempt through a local `qwen2.5:0.5b` is kept only as a parser data
+point: 11/45, with the flag collapsing to `true` on 32 of 34
+non-clarification cases.
+
+The gate stays open: the score regressed against the v1.0 baseline, and the
+20-target human review is still pending.
 
 Gate before 3/10, all four:
 

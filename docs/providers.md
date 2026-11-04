@@ -292,8 +292,11 @@ herald providers         # x should report ready
 `herald x login` is the only command that shows a window. Herald never reads
 cookies, never types credentials, and never completes a challenge. The profile
 lives at `<data-dir>/profiles/x` unless `profile_dir` says otherwise; it must
-never point at an everyday Chrome profile. A missing `x.handle` makes writes
-refuse to prepare: verification needs an identity to attribute the result to.
+never point at an everyday Chrome profile. Herald refuses a path that looks
+like a shared browser profile (`google-chrome`, `chromium`, `microsoft-edge`,
+`personal-main`, ...) before launching anything. A missing `x.handle` makes
+writes refuse to prepare: verification needs an identity to attribute the
+result to.
 
 ### Threads
 
@@ -316,6 +319,18 @@ handle. The receipt carries the status id for a post or reply and a documented
 synthetic id (`dm:<conversation_id>:<unix_ms>`) for a DM, where the DOM exposes
 no event id.
 
+Outbound actions pass local write rails before the browser moves:
+
+- at least 60 seconds between sends (survives a restart);
+- at most 6 sends per rolling hour and 20 per UTC day;
+- identical text is refused for 24 hours — X labels duplicate content and
+  downranks it even when it does not suspend the account;
+- `x.read_only = true` refuses every write while reads keep working.
+
+These are volume and content-shape guards, not X evasion. A breached rail
+returns `RateLimited` (or a duplicate refusal) and nothing is typed, clicked,
+or sent.
+
 A sent-ledger at `<data-dir>/x-sent.json` maps the client token to its receipt.
 Replaying a token returns the stored receipt and never posts twice. An
 unverified result stays `uncertain`; `herald reconcile` reads the ledger through
@@ -336,6 +351,23 @@ X page it belongs to. Thread ids are validated before any navigation, so page
 content cannot steer a URL. Fixtures in the module are hand-written
 approximations and are labelled as such; re-capture them from the dedicated
 profile before trusting the selectors against the live site.
+
+### Why these rails: X's published visibility code
+
+X open-sourced the For You pipeline at
+[`xai-org/x-algorithm`](https://github.com/xai-org/x-algorithm) (analysed at
+revision `b220448`, Apache-2.0). Its `visibility-filtering` rules drop posts
+carrying `SPAM`, `SPAM_HIGH_RECALL`, `SMYTE_SPAM_TWEET`, `DUPLICATE_CONTENT`,
+`DUPLICATE_MENTION`, `DOWNRANK_SPAM_REPLY`, `LOW_QUALITY`, `MALICIOUS_URL`, or
+`UNTRUSTED_URL` labels; `botmaker` and `safety-label-source` produce those
+labels; `abuse-enforcement-service` handles suspensions. The practical lesson
+is that duplicate text, bursts, and engagement-bait shapes cost reach long
+before they cost the account. Herald's write rails target exactly those
+shapes.
+
+That repository is not vendored or added as a submodule: it is an unrelated
+Bazel/Rust monorepo with no runtime role in Herald, and Herald stays
+independently buildable.
 
 Post metrics are **not** implemented. The seven-method provider surface has no
 metrics operation, and adding one is a design change (see ADR 0008).

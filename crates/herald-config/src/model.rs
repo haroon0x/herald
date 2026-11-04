@@ -230,6 +230,11 @@ impl Config {
             x.close_after = parse_bool("HERALD_X_CLOSE_AFTER", &value)?;
         }
 
+        if let Some(value) = get_env("HERALD_X_READ_ONLY") {
+            let x = self.x.get_or_insert_with(XSettings::empty);
+            x.read_only = parse_bool("HERALD_X_READ_ONLY", &value)?;
+        }
+
         Ok(())
     }
 
@@ -386,6 +391,7 @@ impl Config {
                 x.typing_delay_ms.to_string(),
             );
             values.insert("x.close_after".to_string(), x.close_after.to_string());
+            values.insert("x.read_only".to_string(), x.read_only.to_string());
         }
 
         values.into_iter().collect()
@@ -704,6 +710,8 @@ pub struct XSettings {
     pub action_delay_ms: u64,
     pub typing_delay_ms: u64,
     pub close_after: bool,
+    /// Refuse every X write; reads keep working.
+    pub read_only: bool,
 }
 
 impl Default for XSettings {
@@ -715,6 +723,7 @@ impl Default for XSettings {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
+            read_only: false,
         }
     }
 }
@@ -728,6 +737,7 @@ impl XSettings {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
+            read_only: false,
         }
     }
 }
@@ -1101,6 +1111,7 @@ mod tests {
             "x.action_delay_ms",
             "x.typing_delay_ms",
             "x.close_after",
+            "x.read_only",
         ] {
             assert!(flat.iter().any(|(k, _)| k == key), "missing flat key {key}");
         }

@@ -172,12 +172,13 @@ profile. See [providers.md](providers.md#x-browser-adapter) and
 
 | Key | Type | Default | Example | Notes |
 | --- | --- | --- | --- | --- |
-| `profile_dir` | path | `<data-dir>/profiles/x` | `"~/.local/share/herald/profiles/x"` | Dedicated Chrome profile. `~` is expanded. |
+| `profile_dir` | path | `<data-dir>/profiles/x` | `"~/.local/share/herald/profiles/x"` | Dedicated Chrome profile. `~` is expanded. A path that looks like a shared browser profile is refused before launch. |
 | `handle` | string | none | `"@you"` | Display handle. Required for writes: verification needs it to attribute the posted message. |
 | `headless` | boolean | `true` | `false` | Normal commands run headless. `herald x login` overrides this and always shows a window. |
 | `action_delay_ms` | integer | `1800` | `2500` | Pause after opening a page, clicking, or submitting. |
 | `typing_delay_ms` | integer | `20` | `35` | Per-character delay while typing into a composer. |
 | `close_after` | boolean | `true` | `false` | Close the browser at the end of each operation. |
+| `read_only` | boolean | `false` | `true` | Refuse every X write; reads keep working. The strongest local switch while you judge the account risk. |
 
 ### `[model]`
 
@@ -213,6 +214,7 @@ Overrides applied to the configuration:
 | `HERALD_X_ACTION_DELAY_MS` | `x.action_delay_ms` | `1800` |
 | `HERALD_X_TYPING_DELAY_MS` | `x.typing_delay_ms` | `20` |
 | `HERALD_X_CLOSE_AFTER` | `x.close_after` | `true` |
+| `HERALD_X_READ_ONLY` | `x.read_only` | `true` |
 | `HERALD_MAILDIR_PATH` | `maildir.path` | `/home/you/Mail` |
 | `HERALD_SMTP_HOST` | `maildir.smtp.host` | `smtp.example.com` |
 | `HERALD_SMTP_PORT` | `maildir.smtp.port` | `587` |

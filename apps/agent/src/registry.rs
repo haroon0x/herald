@@ -57,6 +57,10 @@ impl Registry {
                     "the X adapter needs Chrome or Chromium; install it or set CHROME before using x"
                         .into(),
                 );
+            } else if let Some(problem) =
+                herald_provider::x::dedicated_profile_problem(&profile_dir)
+            {
+                warnings.push(problem);
             } else if !profile_dir.exists() {
                 warnings.push(format!(
                     "the X profile {} is not initialised; run `herald x login`",
@@ -73,6 +77,7 @@ impl Registry {
                         action_delay_ms: x.action_delay_ms,
                         typing_delay_ms: x.typing_delay_ms,
                         close_after: x.close_after,
+                        read_only: x.read_only,
                         browser_executable: None,
                     },
                     data_dir.to_path_buf(),

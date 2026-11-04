@@ -133,7 +133,12 @@ and takes over the X session.
 validated against a numeric/`safe-id` grammar before navigation. Parsed text
 becomes `Untrusted<String>` and is never used in control flow. The profile is
 dedicated to Herald, so a compromise is bounded to the X account the user chose
-to sign in; Herald never extracts cookies or credentials into its own storage.
+to sign in; Herald never extracts cookies or credentials into its own storage, refuses a
+profile path that looks like a shared browser profile, paces outbound actions
+at least 60 seconds apart, caps them per hour and per UTC day, refuses identical
+text for 24 hours, and can be switched to read-only (`x.read_only`). Duplicate
+content and bursts are label-producing behaviour in X's own visibility code, so
+these rails protect reach as well as the account.
 Challenges, captchas, account warnings, rate limits, and unexpected DOM are hard
 stops rather than retries.
 

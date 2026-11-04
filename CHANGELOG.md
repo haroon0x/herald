@@ -33,6 +33,11 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- X writes are paced at least 60 seconds apart, capped at 6/hour and 20/UTC-day
+  from the sent-ledger, and identical text is refused for 24 hours. A
+  `profile_dir` that looks like a shared browser profile is refused before
+  launch, and `x.read_only` blocks every write. These are local precautions,
+  not evasion.
 - `ProviderId::X` is now implemented. `herald providers` performs a real
   browser health check for `x` when `[x]` is configured.
 - Eval set grows from 42 to 45 cases; the rules engine scores 45/45.

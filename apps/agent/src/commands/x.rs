@@ -55,6 +55,7 @@ pub async fn login(app: &App) -> Result<u8, AppError> {
         action_delay_ms: settings.action_delay_ms,
         typing_delay_ms: settings.typing_delay_ms,
         close_after: true,
+        read_only: settings.read_only,
         browser_executable: None,
     };
 

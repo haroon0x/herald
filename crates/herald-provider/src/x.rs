@@ -93,6 +93,18 @@ const SEL_CHALLENGE_FRAME: &str = r#"iframe[src*="arkose"]"#;
 /// Upper bound on retained seen-ledger entries.
 const SEEN_LEDGER_LIMIT: usize = 5_000;
 
+/// Minimum gap between outbound X actions. A local rail, not an X limit: it
+/// stops a script (or a repeated approval) from turning into a burst, which is
+/// the behaviour most likely to get an account actioned.
+const MIN_WRITE_INTERVAL_MS: i64 = 60_000;
+/// Hard local ceiling on outbound X actions per rolling hour.
+const MAX_WRITES_PER_HOUR: usize = 6;
+/// Hard local ceiling on outbound X actions per UTC day.
+const MAX_WRITES_PER_DAY: usize = 20;
+/// Identical outbound text is refused inside this window: duplicate content is
+/// a label X attaches to posts and accounts, not just a UX annoyance.
+const DUPLICATE_BODY_WINDOW_MS: i64 = 24 * 60 * 60 * 1_000;
+
 /// Configuration for the X browser adapter.
 ///
 /// `profile_dir` is a dedicated profile. Herald never reads it, never copies
@@ -109,6 +121,8 @@ pub struct XConfig {
     pub typing_delay_ms: u64,
     /// Close the browser at the end of each operation.
     pub close_after: bool,
+    /// Refuse every X write. Reads keep working. The strongest local switch.
+    pub read_only: bool,
     /// Explicit Chrome/Chromium binary. `None` uses autodetection.
     pub browser_executable: Option<PathBuf>,
 }
@@ -122,6 +136,7 @@ impl Default for XConfig {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
+            read_only: false,
             browser_executable: None,
         }
     }
@@ -234,6 +249,51 @@ struct SentRecord {
 
 type SentLedger = BTreeMap<String, SentRecord>;
 type SeenLedger = BTreeMap<String, i64>;
+
+/// Local write rails. Every one fails closed and runs before the browser moves.
+///
+/// These are volume and content-shape guards, not X evasion: they keep an
+/// approval (or a script driving approvals) from becoming a burst, and they
+/// keep identical text from being posted twice, which X labels as duplicate
+/// content.
+fn check_write_rails(ledger: &SentLedger, now: i64, body_hash: &str) -> Result<(), ProviderError> {
+    if ledger
+        .values()
+        .any(|record| now.saturating_sub(record.sent_at_ms) < MIN_WRITE_INTERVAL_MS)
+    {
+        return Err(ProviderError::RateLimited);
+    }
+
+    let hour_start = now.saturating_sub(3_600_000);
+    let hour_count = ledger
+        .values()
+        .filter(|record| record.sent_at_ms >= hour_start)
+        .count();
+    if hour_count >= MAX_WRITES_PER_HOUR {
+        return Err(ProviderError::RateLimited);
+    }
+
+    let day_start = now.div_euclid(86_400_000) * 86_400_000;
+    let day_count = ledger
+        .values()
+        .filter(|record| record.sent_at_ms >= day_start)
+        .count();
+    if day_count >= MAX_WRITES_PER_DAY {
+        return Err(ProviderError::RateLimited);
+    }
+
+    let duplicate = ledger.values().any(|record| {
+        record.body_hash == body_hash
+            && now.saturating_sub(record.sent_at_ms) < DUPLICATE_BODY_WINDOW_MS
+    });
+    if duplicate {
+        return Err(ProviderError::Other(
+            "identical X text was sent in the last 24 hours; refusing duplicate content".into(),
+        ));
+    }
+
+    Ok(())
+}
 
 /// X provider. The browser is launched lazily so commands that never touch X
 /// (`herald doctor`, `herald inbox --provider maildir`) start no Chrome.
@@ -515,6 +575,11 @@ impl XProvider {
         body: &str,
         client_token: &str,
     ) -> Result<PreparedAction, ProviderError> {
+        if self.config.read_only {
+            return Err(ProviderError::NotConfigured(
+                "x.read_only is enabled; X writes are disabled".into(),
+            ));
+        }
         if body.trim().is_empty() {
             return Err(ProviderError::Other(
                 "refusing to prepare an empty X body".into(),
@@ -549,6 +614,25 @@ impl XProvider {
         ))
     }
 
+    /// Everything that must hold before the browser is touched for a send.
+    fn check_send_preconditions(
+        &self,
+        ledger: &SentLedger,
+        action: &PreparedAction,
+    ) -> Result<(), ProviderError> {
+        if self.config.read_only {
+            return Err(ProviderError::NotConfigured(
+                "x.read_only is enabled; X writes are disabled".into(),
+            ));
+        }
+        if action.body.trim().is_empty() {
+            return Err(ProviderError::Other(
+                "refusing to send an empty X body".into(),
+            ));
+        }
+        check_write_rails(ledger, now_ms(), &action.body_hash)
+    }
+
     async fn send_reply_inner(
         &self,
         slot: &mut Option<Box<dyn XClient>>,
@@ -571,11 +655,7 @@ impl XProvider {
             return Ok(Self::receipt_from_record(record, &action.thread_id));
         }
 
-        if action.body.trim().is_empty() {
-            return Err(ProviderError::Other(
-                "refusing to send an empty X body".into(),
-            ));
-        }
+        self.check_send_preconditions(&ledger, action)?;
 
         let target = resolve_target(&action.thread_id)?;
         let handle = self.require_handle()?;
@@ -1222,6 +1302,46 @@ fn parse_iso8601_ms(raw: &str) -> Option<i64> {
     Some(seconds * 1_000 + milliseconds)
 }
 
+/// Shared browser profiles Herald must never touch.
+///
+/// A dedicated profile is the whole containment boundary: if Herald drove an
+/// everyday profile it would see every session that profile holds.
+fn ensure_dedicated_profile(profile_dir: &Path) -> Result<(), ProviderError> {
+    const SHARED: [&str; 6] = [
+        "google-chrome",
+        "chromium",
+        "microsoft-edge",
+        "bravesoftware",
+        "opera",
+        "vivaldi",
+    ];
+    const FORBIDDEN: [&str; 1] = ["personal-main"];
+
+    let components: Vec<String> = profile_dir
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    if components.iter().any(|component| {
+        SHARED.contains(&component.as_str()) || FORBIDDEN.contains(&component.as_str())
+    }) {
+        return Err(ProviderError::NotConfigured(format!(
+            "x.profile_dir {} looks like a shared browser profile; Herald needs a dedicated one",
+            profile_dir.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Whether `profile_dir` is a dedicated profile Herald may drive. The registry
+/// uses this to warn before the user tries their first command.
+#[must_use]
+pub fn dedicated_profile_problem(profile_dir: &Path) -> Option<String> {
+    ensure_dedicated_profile(profile_dir)
+        .err()
+        .map(|error| error.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Real client: Chrome over CDP.
 // ---------------------------------------------------------------------------
@@ -1237,11 +1357,11 @@ struct ChromeClient {
 
 impl ChromeClient {
     async fn launch(config: &XConfig, headless: bool) -> Result<Self, ProviderError> {
+        ensure_dedicated_profile(&config.profile_dir)?;
         let mut builder = chromiumoxide::browser::BrowserConfig::builder()
             .user_data_dir(&config.profile_dir)
             .arg("--no-first-run")
-            .arg("--no-default-browser-check")
-            .arg("--disable-blink-features=AutomationControlled");
+            .arg("--no-default-browser-check");
         if let Some(executable) = &config.browser_executable {
             builder = builder.chrome_executable(executable);
         }
@@ -1617,6 +1737,7 @@ mod tests {
             action_delay_ms: 0,
             typing_delay_ms: 0,
             close_after: false,
+            read_only: false,
             browser_executable: None,
         }
     }
@@ -2042,6 +2163,146 @@ mod tests {
             provider.send_reply(&other).await,
             Err(ProviderError::Other(_))
         ));
+    }
+
+    #[test]
+    fn shared_browser_profiles_are_refused() {
+        for bad in [
+            "/home/me/.config/google-chrome",
+            "/home/me/.config/chromium/Default",
+            "/home/me/zyquor/profiles/personal-main",
+        ] {
+            assert!(
+                dedicated_profile_problem(Path::new(bad)).is_some(),
+                "{bad} should be refused"
+            );
+        }
+        assert!(dedicated_profile_problem(Path::new("/data/profiles/x")).is_none());
+    }
+
+    fn ledger_with(records: &[(i64, &str)]) -> SentLedger {
+        records
+            .iter()
+            .enumerate()
+            .map(|(index, (sent_at_ms, hash))| {
+                (
+                    format!("tok-{index}"),
+                    SentRecord {
+                        thread_id: "mention:111".into(),
+                        provider_message_id: format!("mention:{index}"),
+                        body_hash: (*hash).into(),
+                        sent_at_ms: *sent_at_ms,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn write_rails_block_recent_bursts_and_duplicates() {
+        let now = 1_793_786_400_000;
+        assert!(check_write_rails(&SentLedger::new(), now, "h").is_ok());
+        assert!(matches!(
+            check_write_rails(&ledger_with(&[(now - 1_000, "h1")]), now, "h2"),
+            Err(ProviderError::RateLimited)
+        ));
+
+        let hourly = ledger_with(&[
+            (now - 120_000, "a"),
+            (now - 240_000, "b"),
+            (now - 360_000, "c"),
+            (now - 480_000, "d"),
+            (now - 600_000, "e"),
+            (now - 720_000, "f"),
+        ]);
+        assert!(matches!(
+            check_write_rails(&hourly, now, "h-new"),
+            Err(ProviderError::RateLimited)
+        ));
+
+        let duplicate = ledger_with(&[(now - 3_600_000, "same")]);
+        match check_write_rails(&duplicate, now, "same") {
+            Err(ProviderError::Other(message)) => assert!(message.contains("dup")),
+            other => panic!("expected duplicate refusal, got {other:?}"),
+        }
+
+        let old_duplicate = ledger_with(&[(now - DUPLICATE_BODY_WINDOW_MS - 1, "same")]);
+        assert!(check_write_rails(&old_duplicate, now, "same").is_ok());
+    }
+
+    #[tokio::test]
+    async fn read_only_refuses_writes_but_keeps_reads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cfg = config(&tmp);
+        cfg.read_only = true;
+        let provider = XProvider::with_client(
+            cfg,
+            tmp.path().to_path_buf(),
+            Box::new(ScriptedX::new().page("https://x.com/i/status/111", STATUS_111_HTML)),
+        );
+
+        let thread = provider
+            .get_thread(&ThreadId::new("mention:111"))
+            .await
+            .unwrap();
+        assert_eq!(thread.messages.len(), 1);
+
+        assert!(matches!(
+            provider
+                .prepare_reply(&ThreadId::new("mention:111"), "hello", "tok-ro")
+                .await,
+            Err(ProviderError::NotConfigured(_))
+        ));
+        let action = PreparedAction::new(
+            ProviderId::X,
+            ThreadId::new("mention:111"),
+            "hello",
+            "tok-ro",
+        );
+        assert!(matches!(
+            provider.send_reply(&action).await,
+            Err(ProviderError::NotConfigured(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn writes_are_paced_between_actions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let url = "https://x.com/i/status/111";
+        let first_provider = open_provider(
+            &tmp,
+            ScriptedX::new()
+                .page(url, COMPOSE_HTML)
+                .after_click(url, MENTION_AFTER_REPLY),
+        );
+        let first = first_provider
+            .prepare_reply(
+                &ThreadId::new("mention:111"),
+                "Deck is on its way.",
+                "tok-p1",
+            )
+            .await
+            .unwrap();
+        assert!(first_provider.send_reply(&first).await.unwrap().verified);
+
+        // Same data dir, fresh process: the pacing rail survives a restart.
+        let second_provider = open_provider(&tmp, ScriptedX::new().page(url, COMPOSE_HTML));
+        let second = second_provider
+            .prepare_reply(&ThreadId::new("mention:111"), "One more thing.", "tok-p2")
+            .await
+            .unwrap();
+        assert!(matches!(
+            second_provider.send_reply(&second).await,
+            Err(ProviderError::RateLimited)
+        ));
+        // The paced send never reached the browser.
+        assert!(
+            second_provider
+                .find_sent(&ThreadId::new("mention:111"), "tok-p2")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

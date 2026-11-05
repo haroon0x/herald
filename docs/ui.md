@@ -46,6 +46,7 @@ Deep links: `/?token=…&provider=x&scope=feed&thread=mention:123` and
   are identical to the terminal.
 - Rendered message content uses `textContent`, never `innerHTML`.
 - Request bodies are capped at 64 KiB and inputs are validated.
+- An integration test starts the real server and checks that the token is required (no token gets a 403), that the page serves the strict CSP, and that the autopost kill switch is written through the API.
 
 ## Limits
 

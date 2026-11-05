@@ -408,6 +408,7 @@ the data directory removes everything Herald keeps. See
 | X challenge is a hard stop | `health_maps_a_challenge_to_unavailable`, `compose_state_hard_stops_on_a_challenge` | `herald-provider/src/x.rs` |
 | X send never blind-retries | `send_timeout_is_never_retried`, `dm_send_is_idempotent_and_verified` | `herald-provider/src/x.rs` |
 | UI requires its token | `token_comparison_is_exact`, `query_values_are_percent_decoded` | `apps/agent/src/ui.rs` |
+| UI server refuses unauthenticated requests end to end | `ui_server_requires_the_token_and_serves_authenticated_requests` | `apps/agent/tests/ui.rs` |
 | UI arguments are bounded | `inbox_arguments_are_bounded_and_known`, `history_arguments_are_bounded_and_known`, `ask_requires_an_instruction_and_maps_flags` | `apps/agent/src/ui.rs` |
 | Provider failures end `failed` | `send_without_smtp_is_not_configured_and_leaves_mailbox_untouched` | `herald-provider/src/maildir.rs` |
 | Drafts never send | Draft path returns a hash without a provider call; test pending | `apps/agent/src/send.rs` |

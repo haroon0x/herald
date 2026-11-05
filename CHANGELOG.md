@@ -43,6 +43,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- `herald ui` flushes its startup URL so scripts and tests can read it; an
+  end-to-end test now starts the real server and checks the token, 403, CSP,
+  and the autopost kill switch.
 - X writes are paced at least 60 seconds apart, capped at 6/hour and 20/UTC-day
   from the sent-ledger, and identical text is refused for 24 hours. A
   `profile_dir` that looks like a shared browser profile is refused before

@@ -10,6 +10,7 @@
 //! page is plain HTML/CSS/JS served from this binary.
 
 use std::io::Read as _;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -57,6 +58,7 @@ pub fn serve(cli: &Cli, port: u16) -> Result<u8, AppError> {
     println!("Herald UI  http://127.0.0.1:{bound_port}/?token={token}");
     println!("Loopback only. Every API call needs the token. Ctrl+C stops it.");
     println!("Approvals and autopost are the same rails as the CLI.");
+    let _ = std::io::stdout().flush();
 
     for request in server.incoming_requests() {
         let context = context.clone();

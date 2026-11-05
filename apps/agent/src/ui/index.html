@@ -75,6 +75,7 @@
           <div class="tabs" role="tablist">
             <button class="tab is-active" id="tab-thread" data-tab="thread" role="tab">Thread</button>
             <button class="tab" id="tab-queue" data-tab="queue" role="tab">Queue <em id="queue-count">0</em></button>
+            <button class="tab" id="tab-history" data-tab="history" role="tab">History</button>
           </div>
 
           <div class="tabbody" id="thread-view">
@@ -87,6 +88,10 @@
 
           <div class="tabbody is-hidden" id="queue-view">
             <div id="queue" class="queue"></div>
+          </div>
+
+          <div class="tabbody is-hidden" id="history-view">
+            <div id="history" class="history"></div>
           </div>
         </section>
       </div>

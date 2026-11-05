@@ -111,6 +111,7 @@ fn api_response(
         (Method::Get, "/api/inbox") => Ok(context.run(&inbox_args(url))),
         (Method::Get, "/api/thread") => Ok(context.run(&thread_args(url))),
         (Method::Get, "/api/approvals") => Ok(context.run(&["approvals".to_string()])),
+        (Method::Get, "/api/history") => Ok(context.run(&history_args(url))),
         (Method::Get, "/api/autopost") => {
             Ok(context.run(&["autopost".to_string(), "status".to_string()]))
         }
@@ -176,6 +177,17 @@ fn thread_args(url: &str) -> Vec<String> {
     let id = query_param(url, "id").unwrap_or_default();
     let provider = query_param(url, "provider").unwrap_or_else(|| "fake".to_string());
     vec!["thread".to_string(), id, "--provider".to_string(), provider]
+}
+
+fn history_args(url: &str) -> Vec<String> {
+    let limit = query_param(url, "limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .map_or(20, |value| value.clamp(1, 50));
+    vec![
+        "history".to_string(),
+        "--limit".to_string(),
+        limit.to_string(),
+    ]
 }
 
 fn autopost_action(body: &Value) -> Result<String, ApiError> {
@@ -474,6 +486,20 @@ mod tests {
         let args = inbox_args("/api/inbox?scope=evil&limit=0");
         assert!(args.contains(&"all".to_string()));
         assert!(args.contains(&"1".to_string()));
+    }
+
+    #[test]
+    fn history_arguments_are_bounded_and_known() {
+        let args = history_args("/api/history?limit=999");
+        assert_eq!(args[0], "history");
+        assert!(args.contains(&"--limit".to_string()));
+        assert!(args.contains(&"50".to_string()));
+        let args = history_args("/api/history?limit=0");
+        assert!(args.contains(&"1".to_string()));
+        let args = history_args("/api/history");
+        assert!(args.contains(&"20".to_string()));
+        let args = history_args("/api/history?limit=abc");
+        assert!(args.contains(&"20".to_string()));
     }
 
     #[test]

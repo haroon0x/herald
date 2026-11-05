@@ -8,6 +8,7 @@
     items: [],
     selected: null,
     approvals: [],
+    history: [],
     tab: "thread",
     busy: false,
     pendingApproval: null,
@@ -255,6 +256,83 @@
     state.approvals.forEach((approval) => queue.append(approvalCard(approval)));
   }
 
+  function historyRow(action) {
+    const row = el("div", "history-row");
+    row.dataset.state = action.state;
+    const badge = el("span", "badge state-badge", action.state);
+    badge.dataset.state = action.state;
+    row.append(badge);
+
+    const main = el("div", "history-main");
+    const top = el("div", "history-top");
+    top.append(
+      el("span", null, `${action.provider} · ${formatTime(action.created_at_ms)}`),
+      el("span", null, String(action.action_id || "").slice(0, 8)),
+    );
+    main.append(
+      top,
+      el("div", "history-operation", action.operation || "operation"),
+      el("div", "history-target", action.target || action.thread_id || ""),
+    );
+
+    if (action.state === "uncertain") {
+      const actions = el("div", "history-actions");
+      const reconcile = el("button", "ghost", "Reconcile");
+      reconcile.type = "button";
+      reconcile.addEventListener("click", () => reconcileAction(action));
+      actions.append(reconcile);
+      main.append(actions);
+    }
+    row.append(main);
+    return row;
+  }
+
+  function renderHistory() {
+    const view = $("history");
+    view.replaceChildren();
+    if (!state.history.length) {
+      const empty = el("div", "empty");
+      empty.append(
+        el("div", "empty-mark", "·"),
+        el("h3", null, "No recorded actions"),
+        el("p", null, "Reads, drafts, approvals, and sends appear here after they run."),
+      );
+      view.append(empty);
+      return;
+    }
+    state.history.forEach((action, index) => {
+      const row = historyRow(action);
+      row.style.animationDelay = `${Math.min(index * 20, 200)}ms`;
+      view.append(row);
+    });
+  }
+
+  async function loadHistory() {
+    try {
+      const data = await api("/api/history?limit=20");
+      state.history = data.actions || [];
+      renderHistory();
+    } catch (error) {
+      toast(`history: ${error.message}`, true);
+    }
+  }
+
+  async function reconcileAction(action) {
+    setStatus("Reconciling…", true);
+    try {
+      const data = await api("/api/reconcile", {
+        method: "POST",
+        body: { id: action.action_id },
+      });
+      toast(`reconcile: ${data.status || "done"} — ${data.detail || ""}`);
+      setStatus("Idle");
+      await loadHistory();
+    } catch (error) {
+      setStatus("Reconcile failed");
+      toast(error.message, true);
+    }
+  }
+
   async function loadApprovals() {
     try {
       const data = await api("/api/approvals");
@@ -299,7 +377,7 @@
       toast(`approve: ${data.status || "done"} — ${data.detail || ""}`);
       setStatus("Idle");
       state.pendingApproval = null;
-      await Promise.all([loadApprovals(), loadInbox()]);
+      await Promise.all([loadApprovals(), loadInbox(), loadHistory()]);
     } catch (error) {
       setStatus("Send failed");
       toast(error.message, true);
@@ -311,7 +389,7 @@
     try {
       await api("/api/reject", { method: "POST", body: { id: approval.action_id } });
       toast("Rejected. Nothing was sent.");
-      await loadApprovals();
+      await Promise.all([loadApprovals(), loadHistory()]);
     } catch (error) {
       toast(error.message, true);
     }
@@ -334,7 +412,7 @@
       const status = data.status || "done";
       toast(`${status}${data.action_id ? ` · ${data.action_id}` : ""}${data.detail ? `\n${data.detail}` : ""}`);
       setStatus(status === "awaiting_approval" ? "Awaiting approval" : "Idle");
-      await Promise.all([loadApprovals(), loadInbox()]);
+      await Promise.all([loadApprovals(), loadInbox(), loadHistory()]);
       if (status === "awaiting_approval") switchTab("queue");
     } catch (error) {
       setStatus("Plan failed");
@@ -368,8 +446,10 @@
     state.tab = tab;
     $("tab-thread").classList.toggle("is-active", tab === "thread");
     $("tab-queue").classList.toggle("is-active", tab === "queue");
+    $("tab-history").classList.toggle("is-active", tab === "history");
     $("thread-view").classList.toggle("is-hidden", tab !== "thread");
     $("queue-view").classList.toggle("is-hidden", tab !== "queue");
+    $("history-view").classList.toggle("is-hidden", tab !== "history");
   }
 
   function bind() {
@@ -394,6 +474,7 @@
       loadInbox();
       loadApprovals();
       loadAutopost();
+      loadHistory();
     });
 
     $("providers").addEventListener("click", showProviders);
@@ -413,6 +494,7 @@
 
     $("tab-thread").addEventListener("click", () => switchTab("thread"));
     $("tab-queue").addEventListener("click", () => switchTab("queue"));
+    $("tab-history").addEventListener("click", () => switchTab("history"));
 
     const dialog = $("approve-dialog");
     dialog.addEventListener("close", () => {
@@ -443,11 +525,13 @@
     });
     $("scope-title").textContent = scopeTitles[state.scope];
     $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;
-    await Promise.all([loadInbox(), loadApprovals(), loadAutopost()]);
+    await Promise.all([loadInbox(), loadApprovals(), loadAutopost(), loadHistory()]);
     const requestedThread = params.get("thread");
     const match = requestedThread && state.items.find((item) => item.thread_id === requestedThread);
     if (match) {
       openThread(match);
+    } else if (params.get("tab") === "history") {
+      switchTab("history");
     } else if (params.get("tab") === "queue") {
       switchTab("queue");
     } else {

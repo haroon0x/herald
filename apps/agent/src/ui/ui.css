@@ -609,6 +609,97 @@ body {
   margin-top: 10px;
 }
 
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px 24px;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-hard);
+  background: rgba(255, 253, 246, 0.7);
+  animation: rise 240ms ease both;
+}
+
+.history-row[data-state="succeeded"] {
+  border-left-color: var(--ok);
+}
+
+.history-row[data-state="uncertain"] {
+  border-left-color: var(--warn);
+}
+
+.history-row[data-state="failed"] {
+  border-left-color: var(--accent);
+}
+
+.history-main {
+  min-width: 0;
+}
+
+.history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history-operation {
+  margin: 6px 0 3px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.history-target {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.history-meta {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.state-badge[data-state="succeeded"] {
+  color: var(--ok);
+}
+
+.state-badge[data-state="failed"] {
+  color: var(--accent);
+}
+
+.state-badge[data-state="uncertain"] {
+  color: var(--warn);
+}
+
+.state-badge[data-state="awaiting_approval"],
+.state-badge[data-state="executing"] {
+  color: var(--accent);
+}
+
 /* ---------- ask ---------- */
 
 .ask {

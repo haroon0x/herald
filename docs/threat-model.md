@@ -150,6 +150,25 @@ stops rather than retries.
 `herald-provider/src/x.rs`. The scripted `XClient` refuses any URL the test did
 not pre-approve, which proves page content cannot cause a navigation.
 
+### Local UI used as a remote-control surface
+
+**Path.** A web page in the browser, or another local user, reaches the UI
+port and triggers reads, approvals, or a post.
+
+**Controls.** The server binds `127.0.0.1` only. Every `/api/*` call needs a
+per-run 128-bit token injected into the page; the token is not a cookie, so
+cross-site requests cannot carry it and a custom header forces a CORS
+preflight that the server does not answer. A present `Origin` must match the
+loopback origin. CSP is `default-src 'self'`; requests are capped at 64 KiB;
+message content is rendered with `textContent`. The server has no domain logic:
+it spawns `herald --json`, so the approval queue, hash check, and autopost
+rails are the same code paths as the terminal.
+
+**Test.** Token comparison, percent-decoding, argument bounds, ask mapping, and
+autopost action validation in `apps/agent/src/ui.rs`; the page and API were
+smoke-tested through real HTTP requests, and approve/reject were exercised
+end-to-end against the fake provider.
+
 ### Approval bypass by state manipulation
 
 **Path.** A caller marks an unapproved send `succeeded`, or cancels a send that
@@ -388,6 +407,8 @@ the data directory removes everything Herald keeps. See
 | X ids cannot steer a URL | `thread_ids_are_validated_before_any_navigation` | `herald-provider/src/x.rs` |
 | X challenge is a hard stop | `health_maps_a_challenge_to_unavailable`, `compose_state_hard_stops_on_a_challenge` | `herald-provider/src/x.rs` |
 | X send never blind-retries | `send_timeout_is_never_retried`, `dm_send_is_idempotent_and_verified` | `herald-provider/src/x.rs` |
+| UI requires its token | `token_comparison_is_exact`, `query_values_are_percent_decoded` | `apps/agent/src/ui.rs` |
+| UI arguments are bounded | `inbox_arguments_are_bounded_and_known`, `ask_requires_an_instruction_and_maps_flags` | `apps/agent/src/ui.rs` |
 | Provider failures end `failed` | `send_without_smtp_is_not_configured_and_leaves_mailbox_untouched` | `herald-provider/src/maildir.rs` |
 | Drafts never send | Draft path returns a hash without a provider call; test pending | `apps/agent/src/send.rs` |
 | No duplicate on replay | `same_token_sends_only_once` | `herald-provider/src/fake.rs` |

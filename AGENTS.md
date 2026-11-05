@@ -47,6 +47,9 @@ actions after an explicit policy check and user approval.
 - Storage uses SQLite and minimal retention. Do not store full message bodies
   indefinitely. Approval bodies are deleted on decision or expiry.
 - New behavior needs a test that proves the safety property it relies on.
+- The UI is a client of the CLI, never a second execution path. It binds
+  loopback, requires its per-run token, and must not call providers or the
+  database directly; every action goes through a `herald` subprocess.
 - The fake/demo provider is a test harness, not a product provider. Maildir and
   the X adapter are the real providers; do not add a third until both are
   reliable and their safety tests pass.

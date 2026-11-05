@@ -13,11 +13,12 @@ know where everything is, see [../index.md](../index.md) first.
 | 3 | [providers.md](providers.md) | What `fake` and `maildir` do, how threading and Sent verification work, and what a new provider must satisfy. |
 | 4 | [configuration.md](configuration.md) | Every key, path, environment variable, and precedence rule. |
 | 5 | [cli.md](cli.md) | Every command, its options, human and JSON output, exit codes, and `jq` recipes. |
-| 6 | [threat-model.md](threat-model.md) | Assets, adversaries, attack paths, approval UX risks, and the test that proves each property. |
-| 7 | [faq.md](faq.md) | The short answers: auto-send, local models, offline use, deletion, GUIs, Ollama. |
-| 8 | [roadmap.md](roadmap.md) | What shipped, what comes next, and the ladder for model authority. |
-| 9 | [decisions/](decisions/) | Why each load-bearing choice was made. |
-| 10 | [status-2026-11-03.md](status-2026-11-03.md) | A historical snapshot of what was measured on that date. Not current. |
+| 6 | [ui.md](ui.md) | The local browser UI: start it, what each pane does, and its security properties. |
+| 7 | [threat-model.md](threat-model.md) | Assets, adversaries, attack paths, approval UX risks, and the test that proves each property. |
+| 8 | [faq.md](faq.md) | The short answers: auto-send, local models, offline use, deletion, GUIs, Ollama. |
+| 9 | [roadmap.md](roadmap.md) | What shipped, what comes next, and the ladder for model authority. |
+| 10 | [decisions/](decisions/) | Why each load-bearing choice was made. |
+| 11 | [status-2026-11-03.md](status-2026-11-03.md) | A historical snapshot of what was measured on that date. Not current. |
 
 ## By task
 
@@ -50,6 +51,7 @@ contract.
 | [0007](decisions/0007-browser-automation.md) | No browser automation in v1; `chromiumoxide` is the documented alternative | Accepted |
 | [0008](decisions/0008-x-browser-adapter.md) | X adapter: `chromiumoxide`, dedicated profile, human sign-in, constant selectors | Accepted |
 | [0009](decisions/0009-scoped-autopost.md) | Scoped autopost: original timeline posts only, every rail must pass | Accepted |
+| [0010](decisions/0010-local-web-ui.md) | Local browser UI over the CLI; Tauri shell later | Accepted |
 
 ## Project files
 
@@ -72,6 +74,7 @@ The diagrams and brand files referenced by these documents:
 | `assets/demo.svg` | Demo walkthroughs |
 | `assets/mascot.svg` | The messenger owl, used in project personality and docs |
 | `assets/social-preview.svg` | Repository social preview |
+| `assets/ui-dispatch.png` | [ui.md](ui.md) and the README GUI note |
 
 The Mermaid diagrams in the docs are the source of truth. The SVG versions are
 renderings for places that cannot render Mermaid.

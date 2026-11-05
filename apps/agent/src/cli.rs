@@ -158,6 +158,12 @@ pub enum Command {
     },
     /// Print shell completions.
     Completions { shell: Shell },
+    /// Serve a local browser UI on 127.0.0.1.
+    Ui {
+        /// Port to bind. Use 0 for a free port.
+        #[arg(long, default_value_t = 7878)]
+        port: u16,
+    },
 }
 
 /// Which read surface `herald inbox` asks for.

@@ -27,7 +27,7 @@ must pass. Nothing else sends.
 
 | Path | What it is | Responsibility |
 | --- | --- | --- |
-| `apps/agent/` | `herald` CLI | Argument parsing, the execution loop, human/JSON output, exit codes. Owns **no domain rules**. |
+| `apps/agent/` | `herald` CLI and `herald ui` | Argument parsing, the execution loop, human/JSON output, exit codes, and the loopback UI server. Owns **no domain rules**. |
 
 ### Libraries
 
@@ -65,6 +65,7 @@ must pass. Nothing else sends.
 | X parsing, selectors, ledgers, Chrome client | `herald-provider/src/x.rs` |
 | Approvals, reconciliation, execution | `apps/agent/src/send.rs` |
 | CLI command dispatch | `apps/agent/src/commands/mod.rs` |
+| Local browser UI and its assets | `apps/agent/src/ui.rs`, `apps/agent/src/ui/` |
 | Config file format and precedence | `herald-config/src/model.rs` |
 | SQLite schema and migrations | `crates/herald-storage/schema.sql` |
 | Managed model sidecar | `herald-runtime/src/sidecar.rs` |

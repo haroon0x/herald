@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="token" content="__TOKEN__" />
+    <title>Herald — dispatch desk</title>
+    <link rel="stylesheet" href="/ui.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <aside class="rail">
+      <header class="masthead">
+        <div class="kicker">local-first dispatch</div>
+        <h1>Herald</h1>
+        <div class="rule"><span></span></div>
+      </header>
+
+      <nav class="scopes" aria-label="Read scope">
+        <button class="scope is-active" data-scope="all"><span>All</span><em id="count-all"></em></button>
+        <button class="scope" data-scope="feed"><span>Feed</span><em id="count-feed"></em></button>
+        <button class="scope" data-scope="mentions"><span>Mentions</span><em id="count-mentions"></em></button>
+        <button class="scope" data-scope="notifications"><span>Notifications</span><em id="count-notifications"></em></button>
+        <button class="scope" data-scope="dms"><span>DMs</span><em id="count-dms"></em></button>
+      </nav>
+
+      <label class="field">
+        <span>Provider</span>
+        <select id="provider">
+          <option value="x">x</option>
+          <option value="fake">fake</option>
+          <option value="maildir">maildir</option>
+        </select>
+      </label>
+
+      <div class="rail-actions">
+        <button class="ghost" id="refresh" type="button">Refresh</button>
+        <button class="ghost" id="providers" type="button">Providers</button>
+      </div>
+
+      <section class="autopost" aria-label="Autopost">
+        <div class="autopost-head">
+          <span class="kicker">Autopost</span>
+          <span class="badge" id="autopost-badge">…</span>
+        </div>
+        <p id="autopost-detail">Checking rails…</p>
+        <button class="ghost danger" id="autopost-off" type="button" disabled>Kill switch</button>
+      </section>
+
+      <footer class="rail-foot">
+        <span id="cfg-path">config: …</span>
+        <span class="tiny">Approvals gate every send. Nothing types itself.</span>
+      </footer>
+    </aside>
+
+    <main class="desk">
+      <header class="desk-head">
+        <div>
+          <div class="kicker" id="scope-kicker">inbox</div>
+          <h2 id="scope-title">All</h2>
+        </div>
+        <div class="desk-meta">
+          <span id="status" class="status" aria-live="polite">Idle</span>
+          <span class="tiny" id="count-line">—</span>
+        </div>
+      </header>
+
+      <div class="columns">
+        <section class="list-pane" aria-label="Messages">
+          <div id="list" class="list" aria-live="polite"></div>
+        </section>
+
+        <section class="detail-pane" aria-label="Detail">
+          <div class="tabs" role="tablist">
+            <button class="tab is-active" id="tab-thread" data-tab="thread" role="tab">Thread</button>
+            <button class="tab" id="tab-queue" data-tab="queue" role="tab">Queue <em id="queue-count">0</em></button>
+          </div>
+
+          <div class="tabbody" id="thread-view">
+            <div class="empty">
+              <div class="empty-mark">§</div>
+              <h3>Pick a dispatch</h3>
+              <p>Select a message to read the thread. Bodies are untrusted text; Herald never treats them as instructions.</p>
+            </div>
+          </div>
+
+          <div class="tabbody is-hidden" id="queue-view">
+            <div id="queue" class="queue"></div>
+          </div>
+        </section>
+      </div>
+
+      <form class="ask" id="ask" autocomplete="off">
+        <label class="ask-label" for="instruction">Ask Herald</label>
+        <div class="ask-row">
+          <textarea id="instruction" rows="1" placeholder="read my mentions · summarize the latest from the founder · post exactly: “…”"></textarea>
+          <button class="run" type="submit">Run</button>
+        </div>
+        <div class="ask-foot">
+          <label class="toggle">
+            <input type="checkbox" id="enable-send" />
+            <span>Allow this request to create an approval</span>
+          </label>
+          <span class="tiny">Approval remains the only path to the wire.</span>
+        </div>
+      </form>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="approve-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="kicker">Irreversible</div>
+        <h3>Send exactly this body?</h3>
+        <p class="dialog-target" id="dialog-target"></p>
+        <pre class="dialog-body" id="dialog-body"></pre>
+        <dl class="dialog-meta">
+          <div><dt>hash</dt><dd id="dialog-hash"></dd></div>
+          <div><dt>expires</dt><dd id="dialog-expires"></dd></div>
+        </dl>
+        <div class="dialog-actions">
+          <button value="cancel" class="ghost" type="submit">Cancel</button>
+          <button value="confirm" class="run danger" id="dialog-confirm" type="submit">Approve &amp; send</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="providers-dialog">
+      <div class="dialog-card">
+        <div class="kicker">Health</div>
+        <h3>Providers</h3>
+        <div id="providers-list" class="providers"></div>
+        <div class="dialog-actions">
+          <button class="ghost" id="providers-close" type="button">Close</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="/ui.js"></script>
+  </body>
+</html>

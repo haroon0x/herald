@@ -8,6 +8,7 @@ mod output;
 mod planner;
 mod registry;
 mod send;
+mod ui;
 
 use std::process::ExitCode;
 

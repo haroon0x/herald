@@ -12,6 +12,10 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Added
 
+- **`herald ui`**: a loopback browser UI over the same CLI and approval queue.
+  Per-run token, Origin check, CSP, no inline script, explicit endpoints, one
+  command at a time. See [ADR 0010](docs/decisions/0010-local-web-ui.md).
+
 - **X provider** (`x`): reads mentions and DMs, replies, sends DMs, and creates
   original posts through a dedicated Chrome profile driven by `chromiumoxide`.
   Constant selectors only, thread-id validation before navigation, a bounded

@@ -572,6 +572,26 @@ Everything still goes through the approval queue. Nothing autoposts.
 "daily_limit","used_today","remaining_today","min_quality","today_start_ms"}`.
 `off`/`on` emit `{"status","kill_switch","configured","path"}`.
 
+### `herald ui`
+
+```text
+herald ui [--port PORT]
+```
+
+Serves the local browser UI on `127.0.0.1` and prints a URL with a per-run
+token. `--port 0` picks a free port. Every API call needs the token; the page
+cannot be opened without it. See [ui.md](ui.md).
+
+```console
+$ herald ui
+Herald UI  http://127.0.0.1:7878/?token=4f1c…
+Loopback only. Every API call needs the token. Ctrl+C stops it.
+Approvals and autopost are the same rails as the CLI.
+```
+
+This command does not return while the server runs; exit code 1 if the port
+cannot be bound.
+
 ### `herald config`
 
 ```text

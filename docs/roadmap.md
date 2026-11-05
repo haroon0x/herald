@@ -92,10 +92,11 @@ These are requested and tracked, not shipped:
   conversation DOM is not in the page snapshot. Mentions, status threads, and
   the home feed are verified against the live DOM; DMs report nothing until
   the embed is understood, rather than guessing.
-- **A GUI.** The CLI is the only surface today. A desktop or TUI front end would
-  wrap the same commands and approval queue; it must not add a second execution
-  path, and every send still needs an explicit approval. The provider surface
-  does not change.
+- **A GUI.** Shipped as `herald ui`: a loopback browser UI over the same
+  commands and approval queue ([ui.md](ui.md), ADR 0010). The Tauri desktop
+  shell is planned but blocked on system packages (`webkit2gtk-4.1`, `gtk+-3.0`)
+  that only the owner can install; the same page and API are meant to be wrapped
+  unchanged. No GUI adds a second execution path.
 - **Post metrics.** Still needs a new operation and an ADR (ADR 0008).
 
 ## v1.1: IMAP, read-only

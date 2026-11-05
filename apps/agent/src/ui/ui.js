@@ -1,0 +1,462 @@
+(() => {
+  "use strict";
+
+  const token = document.querySelector('meta[name="token"]').content;
+  const state = {
+    scope: "all",
+    provider: "x",
+    items: [],
+    selected: null,
+    approvals: [],
+    tab: "thread",
+    busy: false,
+    pendingApproval: null,
+  };
+
+  const scopeTitles = {
+    all: "All",
+    feed: "Feed",
+    mentions: "Mentions",
+    notifications: "Notifications",
+    dms: "DMs",
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function setStatus(text, busy = false) {
+    const node = $("status");
+    node.textContent = text;
+    node.classList.toggle("is-busy", busy);
+  }
+
+  let toastTimer = null;
+  function toast(message, isError = false) {
+    const node = $("toast");
+    node.textContent = message;
+    node.classList.toggle("is-error", isError);
+    node.classList.add("is-visible");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => node.classList.remove("is-visible"), 5000);
+  }
+
+  async function api(path, options = {}) {
+    const method = options.method || "GET";
+    const headers = { "X-Herald-Token": token };
+    let body;
+    if (options.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
+    const response = await fetch(path, { method, headers, body });
+    const payload = await response.json().catch(() => null);
+    if (!payload) throw new Error(`bad response (${response.status})`);
+    if (!payload.ok) {
+      throw new Error(payload.error?.message || "request failed");
+    }
+    return payload.data ?? payload;
+  }
+
+  function formatTime(ms) {
+    if (!ms) return "—";
+    try {
+      return new Date(ms).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "—";
+    }
+  }
+
+  function shortHash(value) {
+    if (!value) return "—";
+    return String(value).slice(0, 12) + "…";
+  }
+
+  async function loadMeta() {
+    try {
+      const meta = await api("/api/meta");
+      const config = meta.config || {};
+      $("cfg-path").textContent = meta.config_path ? `config: ${meta.config_path}` : "config: default";
+      if (config["x.handle"]) {
+        state.provider = "x";
+      } else if (config.default_provider) {
+        state.provider = config.default_provider;
+      }
+      const requestedProvider = params.get("provider");
+      if (requestedProvider) state.provider = requestedProvider;
+      const requestedScope = params.get("scope");
+      if (requestedScope && scopeTitles[requestedScope]) state.scope = requestedScope;
+      const select = $("provider");
+      if ([...select.options].some((option) => option.value === state.provider)) {
+        select.value = state.provider;
+      }
+    } catch (error) {
+      toast(`config: ${error.message}`, true);
+    }
+  }
+
+  function emptyList(message) {
+    const node = $("list");
+    node.replaceChildren(el("div", "list-empty", message));
+  }
+
+  function renderItems() {
+    const list = $("list");
+    list.replaceChildren();
+    if (!state.items.length) {
+      if (state.scope === "dms") {
+        emptyList("No DMs. X renders DMs in an embedded app Herald does not read yet.");
+      } else {
+        emptyList("Nothing on this surface.");
+      }
+      return;
+    }
+    state.items.forEach((item, index) => {
+      const button = el("button", "item");
+      button.type = "button";
+      button.style.animationDelay = `${Math.min(index * 22, 220)}ms`;
+      button.dataset.id = item.id;
+      if (item.unread) button.classList.add("is-unread");
+      if (state.selected === item.thread_id) button.classList.add("is-selected");
+
+      button.append(el("span", "dot"));
+      const body = el("span");
+      const meta = el("span", "item-meta");
+      meta.append(
+        el("span", "item-sender", item.sender || "unknown"),
+        el("span", "item-time", formatTime(item.timestamp_ms)),
+      );
+      body.append(meta, el("span", "item-subject", item.subject || "(no subject)"));
+      body.append(el("span", "item-thread", item.thread_id || item.id));
+      button.append(body);
+      button.addEventListener("click", () => openThread(item));
+      list.append(button);
+    });
+  }
+
+  function threadError(message) {
+    const view = $("thread-view");
+    view.replaceChildren();
+    const wrap = el("div", "empty");
+    wrap.append(el("div", "empty-mark", "!"), el("h3", null, "Cannot read this thread"), el("p", null, message));
+    view.append(wrap);
+  }
+
+  function renderThread(thread) {
+    const view = $("thread-view");
+    view.replaceChildren();
+    const head = el("div", "thread-head");
+    head.append(
+      el("div", "kicker", `${thread.provider || state.provider} · ${thread.messages?.length || 0} message(s)`),
+      el("h3", null, thread.subject || "Thread"),
+      el("span", "tiny", thread.id || ""),
+    );
+    view.append(head);
+
+    (thread.messages || []).forEach((message, index) => {
+      const node = el("article", "message");
+      node.style.animationDelay = `${Math.min(index * 30, 240)}ms`;
+      const meta = el("div", "message-meta");
+      meta.append(
+        el("span", "message-sender", message.sender || "unknown"),
+        el("span", null, formatTime(message.timestamp_ms)),
+      );
+      node.append(meta, el("p", "message-body", message.body || ""));
+      view.append(node);
+    });
+
+    if (!thread.messages || !thread.messages.length) {
+      view.append(el("div", "empty", "This thread has no readable messages."));
+    }
+  }
+
+  async function openThread(item) {
+    state.selected = item.thread_id;
+    renderItems();
+    switchTab("thread");
+    setStatus("Reading thread…", true);
+    try {
+      const thread = await api(
+        `/api/thread?provider=${encodeURIComponent(state.provider)}&id=${encodeURIComponent(item.thread_id || item.id)}`,
+      );
+      renderThread(thread);
+      setStatus("Thread loaded");
+    } catch (error) {
+      threadError(error.message);
+      setStatus("Thread failed");
+      toast(error.message, true);
+    }
+  }
+
+  async function loadInbox() {
+    setStatus(`Reading ${scopeTitles[state.scope].toLowerCase()} from ${state.provider}…`, true);
+    try {
+      const data = await api(
+        `/api/inbox?scope=${encodeURIComponent(state.scope)}&provider=${encodeURIComponent(state.provider)}&limit=20`,
+      );
+      state.items = data.messages || [];
+      renderItems();
+      $("count-line").textContent = `${state.items.length} item(s) · ${state.provider} · ${state.scope}`;
+      setStatus("Idle");
+    } catch (error) {
+      state.items = [];
+      emptyList("Could not read this surface. " + error.message);
+      $("count-line").textContent = "—";
+      setStatus("Read failed");
+      toast(error.message, true);
+    }
+  }
+
+  function approvalCard(approval) {
+    const card = el("article", "approval");
+    const top = el("div", "approval-top");
+    top.append(
+      el("span", null, `${approval.provider} · ${formatTime(approval.expires_at_ms)}`),
+      el("span", null, shortHash(approval.body_hash)),
+    );
+    card.append(
+      top,
+      el("p", "approval-target", approval.target || approval.thread_id || ""),
+      el("pre", "approval-body", approval.body || ""),
+    );
+    const actions = el("div", "approval-actions");
+    const approve = el("button", "run", "Review");
+    approve.type = "button";
+    approve.addEventListener("click", () => askApproval(approval));
+    const reject = el("button", "ghost danger", "Reject");
+    reject.type = "button";
+    reject.addEventListener("click", () => rejectApproval(approval));
+    actions.append(reject, approve);
+    card.append(actions);
+    return card;
+  }
+
+  function renderApprovals() {
+    const queue = $("queue");
+    queue.replaceChildren();
+    $("queue-count").textContent = state.approvals.length;
+    if (!state.approvals.length) {
+      const empty = el("div", "empty");
+      empty.append(el("div", "empty-mark", "✓"), el("h3", null, "Queue clear"), el("p", null, "Nothing is waiting for a decision."));
+      queue.append(empty);
+      return;
+    }
+    state.approvals.forEach((approval) => queue.append(approvalCard(approval)));
+  }
+
+  async function loadApprovals() {
+    try {
+      const data = await api("/api/approvals");
+      state.approvals = data.approvals || [];
+      renderApprovals();
+    } catch (error) {
+      toast(`approvals: ${error.message}`, true);
+    }
+  }
+
+  async function loadAutopost() {
+    try {
+      const data = await api("/api/autopost");
+      const badge = $("autopost-badge");
+      badge.textContent = data.status === "enabled" ? "armed" : "approval only";
+      badge.dataset.state = data.status === "enabled" ? "on" : "off";
+      $("autopost-detail").textContent =
+        `${data.used_today}/${data.daily_limit} today · floor ${data.min_quality}` +
+        (data.quiet_hours ? ` · quiet ${data.quiet_now ? "now" : data.quiet_hours}` : "") +
+        (data.kill_switch ? " · kill switch ON" : "");
+      $("autopost-off").disabled = Boolean(data.kill_switch);
+    } catch (error) {
+      $("autopost-detail").textContent = error.message;
+    }
+  }
+
+  function askApproval(approval) {
+    state.pendingApproval = approval;
+    $("dialog-target").textContent = `${approval.provider} · ${approval.target || approval.thread_id}`;
+    $("dialog-body").textContent = approval.body || "";
+    $("dialog-hash").textContent = approval.body_hash || "—";
+    $("dialog-expires").textContent = formatTime(approval.expires_at_ms);
+    $("approve-dialog").showModal();
+  }
+
+  async function approvePending() {
+    const approval = state.pendingApproval;
+    if (!approval) return;
+    setStatus("Sending…", true);
+    try {
+      const data = await api("/api/approve", { method: "POST", body: { id: approval.action_id } });
+      toast(`approve: ${data.status || "done"} — ${data.detail || ""}`);
+      setStatus("Idle");
+      state.pendingApproval = null;
+      await Promise.all([loadApprovals(), loadInbox()]);
+    } catch (error) {
+      setStatus("Send failed");
+      toast(error.message, true);
+    }
+  }
+
+  async function rejectApproval(approval) {
+    if (!window.confirm(`Reject ${approval.action_id}? Nothing will be sent.`)) return;
+    try {
+      await api("/api/reject", { method: "POST", body: { id: approval.action_id } });
+      toast("Rejected. Nothing was sent.");
+      await loadApprovals();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function runAsk(event) {
+    event.preventDefault();
+    const instruction = $("instruction").value.trim();
+    if (!instruction) return;
+    setStatus("Planning…", true);
+    try {
+      const data = await api("/api/ask", {
+        method: "POST",
+        body: {
+          instruction,
+          provider: state.provider,
+          enable_send: $("enable-send").checked,
+        },
+      });
+      const status = data.status || "done";
+      toast(`${status}${data.action_id ? ` · ${data.action_id}` : ""}${data.detail ? `\n${data.detail}` : ""}`);
+      setStatus(status === "awaiting_approval" ? "Awaiting approval" : "Idle");
+      await Promise.all([loadApprovals(), loadInbox()]);
+      if (status === "awaiting_approval") switchTab("queue");
+    } catch (error) {
+      setStatus("Plan failed");
+      toast(error.message, true);
+    }
+  }
+
+  async function showProviders() {
+    const dialog = $("providers-dialog");
+    const list = $("providers-list");
+    list.replaceChildren(el("div", "tiny", "Checking…"));
+    dialog.showModal();
+    try {
+      const data = await api("/api/providers");
+      list.replaceChildren();
+      (data.providers || []).forEach((provider) => {
+        const row = el("div", "provider-row");
+        row.append(
+          el("span", null, provider.provider),
+          el("span", provider.status === "ready" ? "ok" : "bad", provider.status),
+          el("span", null, provider.detail),
+        );
+        list.append(row);
+      });
+    } catch (error) {
+      list.replaceChildren(el("div", "tiny", error.message));
+    }
+  }
+
+  function switchTab(tab) {
+    state.tab = tab;
+    $("tab-thread").classList.toggle("is-active", tab === "thread");
+    $("tab-queue").classList.toggle("is-active", tab === "queue");
+    $("thread-view").classList.toggle("is-hidden", tab !== "thread");
+    $("queue-view").classList.toggle("is-hidden", tab !== "queue");
+  }
+
+  function bind() {
+    document.querySelectorAll(".scope").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".scope").forEach((other) => other.classList.remove("is-active"));
+        button.classList.add("is-active");
+        state.scope = button.dataset.scope;
+        $("scope-title").textContent = scopeTitles[state.scope];
+        $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;
+        loadInbox();
+      });
+    });
+
+    $("provider").addEventListener("change", (event) => {
+      state.provider = event.target.value;
+      loadInbox();
+      loadAutopost();
+    });
+
+    $("refresh").addEventListener("click", () => {
+      loadInbox();
+      loadApprovals();
+      loadAutopost();
+    });
+
+    $("providers").addEventListener("click", showProviders);
+    $("providers-close").addEventListener("click", () => $("providers-dialog").close());
+    $("ask").addEventListener("submit", runAsk);
+
+    $("autopost-off").addEventListener("click", async () => {
+      if (!window.confirm("Write the autopost kill switch? Autonomous posts stop immediately.")) return;
+      try {
+        await api("/api/autopost", { method: "POST", body: { action: "off" } });
+        toast("Kill switch written. Autopost is off.");
+        loadAutopost();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    });
+
+    $("tab-thread").addEventListener("click", () => switchTab("thread"));
+    $("tab-queue").addEventListener("click", () => switchTab("queue"));
+
+    const dialog = $("approve-dialog");
+    dialog.addEventListener("close", () => {
+      if (dialog.returnValue === "confirm") approvePending();
+      else state.pendingApproval = null;
+    });
+
+    $("instruction").addEventListener("input", (event) => {
+      const node = event.target;
+      node.style.height = "auto";
+      node.style.height = `${Math.min(node.scrollHeight, 140)}px`;
+    });
+
+    $("instruction").addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        $("ask").requestSubmit();
+      }
+    });
+  }
+
+  async function boot() {
+    bind();
+    await loadMeta();
+    const select = $("provider");
+    select.value = state.provider;
+    document.querySelectorAll(".scope").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.scope === state.scope);
+    });
+    $("scope-title").textContent = scopeTitles[state.scope];
+    $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;
+    await Promise.all([loadInbox(), loadApprovals(), loadAutopost()]);
+    const requestedThread = params.get("thread");
+    const match = requestedThread && state.items.find((item) => item.thread_id === requestedThread);
+    if (match) {
+      openThread(match);
+    } else if (params.get("tab") === "queue") {
+      switchTab("queue");
+    } else {
+      switchTab("thread");
+    }
+  }
+
+  boot().catch((error) => {
+    setStatus("UI failed");
+    toast(error.message, true);
+  });
+})();

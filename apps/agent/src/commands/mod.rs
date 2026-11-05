@@ -96,10 +96,12 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
             .await
         }
         // Handled before the app is loaded.
-        Command::Init { .. } | Command::Completions { .. } => Err(AppError::new(
-            "internal",
-            "command should have been handled before app initialization",
-        )),
+        Command::Init { .. } | Command::Completions { .. } | Command::Ui { .. } => {
+            Err(AppError::new(
+                "internal",
+                "command should have been handled before app initialization",
+            ))
+        }
     }
 }
 

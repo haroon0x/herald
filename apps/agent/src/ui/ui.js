@@ -26,7 +26,6 @@
     feed: "Feed",
     mentions: "Mentions",
     notifications: "Notifications",
-    dms: "DMs",
   };
 
   const params = new URLSearchParams(window.location.search);
@@ -182,6 +181,11 @@
     state.cursor = next;
     renderItems();
     document.querySelector(".item.is-cursor")?.scrollIntoView({ block: "nearest" });
+  }
+
+  function invalidateReads() {
+    state.cache.clear();
+    state.threadCache.clear();
   }
 
   function refreshAll() {
@@ -408,6 +412,7 @@
       });
       toast(`reconcile: ${data.status || "done"} — ${data.detail || ""}`);
       setStatus("Idle");
+      invalidateReads();
       await loadHistory();
     } catch (error) {
       setStatus("Reconcile failed");
@@ -459,6 +464,7 @@
       toast(`approve: ${data.status || "done"} — ${data.detail || ""}`);
       setStatus("Idle");
       state.pendingApproval = null;
+      invalidateReads();
       await Promise.all([loadApprovals(), loadInbox(), loadHistory()]);
     } catch (error) {
       setStatus("Send failed");
@@ -471,6 +477,7 @@
     try {
       await api("/api/reject", { method: "POST", body: { id: approval.action_id } });
       toast("Rejected. Nothing was sent.");
+      invalidateReads();
       await Promise.all([loadApprovals(), loadHistory()]);
     } catch (error) {
       toast(error.message, true);
@@ -494,6 +501,7 @@
       const status = data.status || "done";
       toast(`${status}${data.action_id ? ` · ${data.action_id}` : ""}${data.detail ? `\n${data.detail}` : ""}`);
       setStatus(status === "awaiting_approval" ? "Awaiting approval" : "Idle");
+      invalidateReads();
       await Promise.all([loadApprovals(), loadInbox(), loadHistory()]);
       if (status === "awaiting_approval") switchTab("queue");
     } catch (error) {

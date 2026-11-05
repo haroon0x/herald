@@ -49,6 +49,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- Notifications are unread on the check that finds them, then read on the next;
+  writes clear the UI read cache. DMs are out of scope in the UI.
+
 - Notifications reads wait for the cards to hydrate after the shell paints, so a
   fresh check does not falsely report an empty tab.
 

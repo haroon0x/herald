@@ -88,10 +88,9 @@ These are requested and tracked, not shipped:
 - **Notifications beyond mentions.** Shipped as
   `herald inbox --provider x --scope notifications` (likes, reposts, follows,
   system notices; display-only when there is no underlying status).
-- **DM list selectors.** X now renders DMs in an embedded `xchat` app whose
-  conversation DOM is not in the page snapshot. Mentions, status threads, and
-  the home feed are verified against the live DOM; DMs report nothing until
-  the embed is understood, rather than guessing.
+- **DMs: not planned.** The owner does not need DM reads. X renders them in an
+  embedded `xchat` app outside the page DOM; Herald keeps the API scope but
+  does not expose it in the UI and will not guess at the embed.
 - **A GUI.** Shipped as `herald ui`: a loopback browser UI over the same
   commands and approval queue ([ui.md](ui.md), ADR 0010). The Tauri desktop
   shell is planned but blocked on system packages (`webkit2gtk-4.1`, `gtk+-3.0`)

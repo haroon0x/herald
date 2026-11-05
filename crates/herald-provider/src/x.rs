@@ -538,6 +538,16 @@ impl XProvider {
         });
         summaries.dedup_by(|left, right| left.id == right.id);
         summaries.truncate(limit);
+        if matches!(query.scope, MessageScope::Notifications) {
+            // The response above still carries the unread flags; mark these
+            // seen now so the next check reports them read. Mentions keep
+            // their current behaviour (seen when the thread is opened).
+            let ids: Vec<String> = summaries
+                .iter()
+                .map(|summary| summary.id.0.clone())
+                .collect();
+            self.mark_seen(&ids);
+        }
         Ok(summaries)
     }
 
@@ -2337,6 +2347,28 @@ mod tests {
         assert_eq!(items[1].sender, "@bob");
         assert!(items[1].thread_id.as_str().starts_with("notification:"));
         assert_eq!(items[2].sender, "unknown");
+    }
+
+    #[tokio::test]
+    async fn notifications_are_unread_on_the_check_that_finds_them_then_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = open_provider(
+            &tmp,
+            ScriptedX::new().page(NOTIFICATIONS_URL, NOTIFICATIONS_HTML),
+        );
+        let first = provider
+            .list_recent(&MessageQuery::scoped(10, MessageScope::Notifications))
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 3);
+        assert!(first.iter().all(|summary| summary.unread));
+
+        let second = provider
+            .list_recent(&MessageQuery::scoped(10, MessageScope::Notifications))
+            .await
+            .unwrap();
+        assert_eq!(second.len(), 3);
+        assert!(second.iter().all(|summary| !summary.unread));
     }
 
     #[tokio::test]

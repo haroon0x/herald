@@ -21,7 +21,7 @@ URL without it is refused. `--port 0` picks a free port. `Ctrl+C` stops it.
 
 | Area | Behaviour |
 | --- | --- |
-| Scopes | All, Feed, Mentions, Notifications, DMs. Same `herald inbox --scope` reads. |
+| Scopes | All, Feed, Mentions, Notifications. Same `herald inbox --scope` reads. DMs are out of scope. |
 | Provider | `x`, `fake`, or `maildir`; the default follows the config, preferring `x` when `[x]` is configured. |
 | Threads | Clicking an item runs `herald thread`; message bodies are untrusted text. |
 | Queue | Pending approvals with the exact body, hash, and expiry. Review opens a confirmation dialog; approve runs `herald approve`, reject runs `herald reject`. |
@@ -29,6 +29,7 @@ URL without it is refused. `--port 0` picks a free port. `Ctrl+C` stops it.
 | Autopost | Shows the rails and writes the kill switch (`herald autopost off`). |
 | Providers | Health table from `herald providers` (X launches a browser; expect a delay). |
 | Filter | Client-side filter over the loaded list; `/` focuses it, `Esc` clears. |
+| Freshness | Approve, reject, reconcile, and ask clear the read cache before reloading. Notifications show unread on the check that finds them, then read on the next check. |
 | History | Recent actions with state. `uncertain` sends expose Reconcile, which runs `herald reconcile` and never retries. |
 
 Keyboard: `j`/`k` move, `Enter` opens, `/` filters, `r` refreshes, `q` queue,
@@ -70,7 +71,8 @@ open a thread that is not cached.
 
 - Not a network service: no accounts, no TLS, no remote access.
 - One command at a time, so an X read blocks the first paint.
-- DMs show empty: X renders them in an embedded `xchat` app the adapter does
-  not parse yet.
+- DMs are out of scope: the owner does not need them, and X renders them in an
+  embedded `xchat` app the adapter does not parse. The API scope remains for
+  completeness but the UI does not expose it.
 - `herald x login` stays in the terminal: it needs a visible browser window and
   a human.

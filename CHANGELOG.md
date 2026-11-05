@@ -43,6 +43,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- `herald ui` uses a quieter neutral interface: system sans, white surfaces, one
+  teal accent, no textures or newspaper rules. Selected threads highlight one
+  item, action states are colour-coded, and the autopost copy is plain English.
 - `herald ui` flushes its startup URL so scripts and tests can read it; an
   end-to-end test now starts the real server and checks the token, 403, CSP,
   and the autopost kill switch.

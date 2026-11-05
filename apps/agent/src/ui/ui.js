@@ -129,7 +129,7 @@
       button.style.animationDelay = `${Math.min(index * 22, 220)}ms`;
       button.dataset.id = item.id;
       if (item.unread) button.classList.add("is-unread");
-      if (state.selected === item.thread_id) button.classList.add("is-selected");
+      if (state.selected === item.id) button.classList.add("is-selected");
 
       button.append(el("span", "dot"));
       const body = el("span");
@@ -183,7 +183,7 @@
   }
 
   async function openThread(item) {
-    state.selected = item.thread_id;
+    state.selected = item.id;
     renderItems();
     switchTab("thread");
     setStatus("Reading thread…", true);
@@ -350,9 +350,9 @@
       badge.textContent = data.status === "enabled" ? "armed" : "approval only";
       badge.dataset.state = data.status === "enabled" ? "on" : "off";
       $("autopost-detail").textContent =
-        `${data.used_today}/${data.daily_limit} today · floor ${data.min_quality}` +
+        `${data.used_today} of ${data.daily_limit} posts today · quality floor ${data.min_quality}` +
         (data.quiet_hours ? ` · quiet ${data.quiet_now ? "now" : data.quiet_hours}` : "") +
-        (data.kill_switch ? " · kill switch ON" : "");
+        (data.kill_switch ? " · kill switch on" : "");
       $("autopost-off").disabled = Boolean(data.kill_switch);
     } catch (error) {
       $("autopost-detail").textContent = error.message;

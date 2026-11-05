@@ -25,7 +25,12 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
     let reply_body = extract_body(text);
 
     if let Some(question) = clarify_reason(&lower) {
-        return Some(clarification_plan(provider, target, question));
+        return Some(clarification_plan(
+            provider,
+            target,
+            Operation::ListUnreadMessages,
+            question,
+        ));
     }
 
     let asks_for_summary = starts_with_any(&lower, &["prepare", "draft"])
@@ -68,11 +73,7 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
                 needs_clarification: false,
                 clarification_question: None,
             }),
-            None => Some(clarification_plan(
-                provider,
-                Target::Timeline,
-                "What should the post say?",
-            )),
+            None => Some(post_body_clarification(provider)),
         };
     }
 
@@ -84,11 +85,7 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
 
     let (operation, reply_body) = if outbound {
         let Some(body) = reply_body else {
-            return Some(clarification_plan(
-                provider,
-                target,
-                "What should the reply say?",
-            ));
+            return Some(reply_body_clarification(provider, target, &lower));
         };
         let operation = if starts_with_any(&lower, &["draft", "prepare", "write back"]) {
             Operation::PrepareReply
@@ -198,10 +195,33 @@ fn clarify_reason(lower: &str) -> Option<&'static str> {
     None
 }
 
-fn clarification_plan(provider: ProviderId, target: Target, question: &'static str) -> ActionPlan {
+fn post_body_clarification(provider: ProviderId) -> ActionPlan {
+    clarification_plan(
+        provider,
+        Target::Timeline,
+        Operation::CreatePost,
+        "What should the post say?",
+    )
+}
+
+fn reply_body_clarification(provider: ProviderId, target: Target, lower: &str) -> ActionPlan {
+    let operation = if starts_with_any(lower, &["draft", "prepare", "write back"]) {
+        Operation::PrepareReply
+    } else {
+        Operation::SendReply
+    };
+    clarification_plan(provider, target, operation, "What should the reply say?")
+}
+
+fn clarification_plan(
+    provider: ProviderId,
+    target: Target,
+    operation: Operation,
+    question: &'static str,
+) -> ActionPlan {
     ActionPlan {
         provider,
-        operation: Operation::ListUnreadMessages,
+        operation,
         target,
         reply_body: None,
         needs_clarification: true,

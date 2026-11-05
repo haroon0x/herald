@@ -178,7 +178,7 @@ and the `llama-server` binary.
 
 ```text
 herald ask "<instruction>" [--provider P] [--engine rules|auto|model]
-                           [--enable-send] [--thread ID]
+                           [--enable-send] [--thread ID] [--body-env VAR]
 ```
 
 Plans the instruction, validates it, applies policy, and runs it.
@@ -193,6 +193,12 @@ Plans the instruction, validates it, applies policy, and runs it.
 `--thread <id>` pins the target to an exact thread id; use it when a phrase is
 ambiguous or when scripting. The id is still re-resolved and checked at approve
 time.
+`--body-env <VAR>` reads the exact outbound body from the environment variable
+`VAR` instead of any model draft (no drafting is attempted). It is for callers
+that already hold the body — the `herald ui` composer is the caller this exists
+for — and the body never travels in argv. An unset or whitespace-only variable
+is rejected with `invalid_plan`. The plan still passes validation and policy:
+with `--enable-send` the body is queued as an approval, never sent directly.
 
 A read:
 

@@ -61,9 +61,12 @@
           <div class="kicker" id="scope-kicker">inbox</div>
           <h2 id="scope-title">All</h2>
         </div>
-        <div class="desk-meta">
-          <span id="status" class="status" aria-live="polite">Idle</span>
-          <span class="tiny" id="count-line">—</span>
+        <div class="desk-side">
+          <div class="desk-meta">
+            <span id="status" class="status" aria-live="polite">Idle</span>
+            <span class="tiny" id="count-line">—</span>
+          </div>
+          <button class="run compose" id="compose" type="button">Compose</button>
         </div>
       </header>
 
@@ -139,6 +142,24 @@
         <div class="dialog-actions">
           <button value="cancel" class="ghost" type="submit">Cancel</button>
           <button value="confirm" class="run danger" id="dialog-confirm" type="submit">Approve &amp; send</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="compose-dialog">
+      <form class="dialog-card compose-card" id="compose-form" autocomplete="off">
+        <div class="kicker">Post</div>
+        <h3>Compose a post</h3>
+        <p class="dialog-target" id="compose-target"></p>
+        <label class="ask-label" for="compose-body">Body</label>
+        <textarea id="compose-body" class="compose-body" rows="4" maxlength="280" placeholder="What should the post say?" aria-describedby="compose-count"></textarea>
+        <div class="compose-foot">
+          <span class="tiny">Creates an approval; nothing is sent.</span>
+          <span class="tiny compose-count" id="compose-count">0 / 280</span>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost" id="compose-cancel" type="button">Cancel</button>
+          <button class="run" id="compose-queue" type="submit">Queue post</button>
         </div>
       </form>
     </dialog>

@@ -196,6 +196,9 @@ fn api_response(
         (Method::Post, "/api/approve") => run_with_id(context, "approve", body),
         (Method::Post, "/api/reject") => run_with_id(context, "reject", body),
         (Method::Post, "/api/reconcile") => run_with_id(context, "reconcile", body),
+        (Method::Post, "/api/post") => {
+            post_action(body).map(|post| context.run_with_env(&post.args, &post.env))
+        }
         (Method::Post, "/api/autopost") => {
             autopost_action(body).map(|action| context.run(&["autopost".to_string(), action]))
         }
@@ -305,8 +308,68 @@ fn ask_action(body: &Value) -> Result<Vec<String>, ApiError> {
     Ok(args)
 }
 
+/// The composed `ask "post exactly:"` invocation: argv plus the child-process
+/// environment carrying the exact body.
+struct PostInvocation {
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+}
+
+/// Build the `ask "post exactly:"` invocation for the composer. The exact body
+/// travels in the child environment (`HERALD_UI_BODY`), never argv; the CLI
+/// reads it with `--body-env` and queues an approval. Nothing is sent here.
+fn post_action(body: &Value) -> Result<PostInvocation, ApiError> {
+    let text = body
+        .get("body")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::new("invalid", "body is required"))?;
+    let length = text.chars().count();
+    if !(1..=crate::planner::POST_MAX_CHARS).contains(&length) {
+        return Err(ApiError::new("invalid", "body must be 1 to 280 characters"));
+    }
+    let provider = match body.get("provider").and_then(Value::as_str) {
+        None => "x",
+        Some(raw) => {
+            let trimmed = raw.trim();
+            let valid = !trimmed.is_empty()
+                && trimmed.chars().count() <= 32
+                && trimmed
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphanumeric())
+                && trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if !valid {
+                return Err(ApiError::new(
+                    "invalid",
+                    "provider is not a known provider id",
+                ));
+            }
+            trimmed
+        }
+    };
+    let args = vec![
+        "ask".to_string(),
+        "post exactly:".to_string(),
+        "--provider".to_string(),
+        provider.to_string(),
+        "--body-env".to_string(),
+        "HERALD_UI_BODY".to_string(),
+        "--enable-send".to_string(),
+    ];
+    Ok(PostInvocation {
+        args,
+        env: vec![("HERALD_UI_BODY".to_string(), text.to_string())],
+    })
+}
+
 impl Context {
     fn run(&self, args: &[String]) -> Value {
+        self.run_with_env(args, &[])
+    }
+
+    fn run_with_env(&self, args: &[String], env: &[(String, String)]) -> Value {
         let _guard = self
             .gate
             .lock()
@@ -322,6 +385,9 @@ impl Context {
             command.arg("--config").arg(config);
         }
         command.arg("--no-color").arg("--json").args(args);
+        for (key, value) in env {
+            command.env(key, value);
+        }
 
         match command.output() {
             Ok(output) => {
@@ -598,6 +664,52 @@ mod tests {
             !UI_JS.contains("innerHTML"),
             "untrusted content must be textContent"
         );
+    }
+
+    #[test]
+    fn post_validates_body_length_in_chars() {
+        assert!(post_action(&json!({})).is_err());
+        assert!(post_action(&json!({"body": ""})).is_err());
+        assert!(post_action(&json!({"body": 42})).is_err());
+        assert!(post_action(&json!({"body": "x".repeat(280)})).is_ok());
+        assert!(post_action(&json!({"body": "x".repeat(281)})).is_err());
+        // Counted in characters, not bytes.
+        assert!(post_action(&json!({"body": "é".repeat(280)})).is_ok());
+        assert!(post_action(&json!({"body": "é".repeat(281)})).is_err());
+    }
+
+    #[test]
+    fn post_passes_the_exact_body_via_env_not_argv() {
+        let body = "Ship it — \"today\". 🚀";
+        let post = post_action(&json!({"body": body, "provider": "maildir"})).unwrap();
+        let args = &post.args;
+        let has_pair =
+            |flag: &str, value: &str| args.windows(2).any(|w| w[0] == flag && w[1] == value);
+        assert_eq!(args[0], "ask");
+        assert!(args.contains(&"post exactly:".to_string()));
+        assert!(has_pair("--provider", "maildir"));
+        assert!(has_pair("--body-env", "HERALD_UI_BODY"));
+        assert!(args.contains(&"--enable-send".to_string()));
+        assert!(
+            !args.iter().any(|arg| arg.contains(body)),
+            "the body must never appear in argv"
+        );
+        assert_eq!(
+            post.env,
+            vec![("HERALD_UI_BODY".to_string(), body.to_string())]
+        );
+    }
+
+    #[test]
+    fn post_defaults_to_x_and_rejects_odd_providers() {
+        let post = post_action(&json!({"body": "hello"})).unwrap();
+        assert!(
+            post.args
+                .windows(2)
+                .any(|w| w[0] == "--provider" && w[1] == "x")
+        );
+        assert!(post_action(&json!({"body": "hello", "provider": "--enable-send"})).is_err());
+        assert!(post_action(&json!({"body": "hello", "provider": ""})).is_err());
     }
 
     #[test]

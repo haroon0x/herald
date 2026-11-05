@@ -32,6 +32,7 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
             engine,
             enable_send,
             thread,
+            body_env,
         } => {
             ask::run(
                 app,
@@ -40,6 +41,7 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
                 engine,
                 enable_send,
                 thread.as_deref(),
+                body_env.as_deref(),
             )
             .await
         }

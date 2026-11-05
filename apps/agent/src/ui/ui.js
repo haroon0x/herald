@@ -510,6 +510,51 @@
     }
   }
 
+  function updateComposeCount() {
+    const count = [...$("compose-body").value].length;
+    const counter = $("compose-count");
+    counter.textContent = `${count} / 280`;
+    counter.classList.toggle("is-over", count > 280);
+    $("compose-queue").disabled = count === 0 || count > 280;
+  }
+
+  function openCompose() {
+    $("compose-body").value = "";
+    $("compose-target").textContent = `${state.provider} · your timeline`;
+    updateComposeCount();
+    $("compose-dialog").showModal();
+    $("compose-body").focus();
+  }
+
+  async function queuePost(event) {
+    event.preventDefault();
+    const body = $("compose-body").value;
+    const count = [...body].length;
+    if (count === 0 || count > 280) {
+      toast("Body must be 1–280 characters.", true);
+      return;
+    }
+    setStatus("Queuing post…", true);
+    $("compose-queue").disabled = true;
+    try {
+      const data = await api("/api/post", {
+        method: "POST",
+        body: { body, provider: state.provider },
+      });
+      $("compose-dialog").close();
+      const status = data.status || "done";
+      toast(`${status}${data.action_id ? ` · ${data.action_id}` : ""}`);
+      setStatus(status === "awaiting_approval" ? "Awaiting approval" : "Idle");
+      await Promise.all([loadApprovals(), loadHistory()]);
+      switchTab("queue");
+    } catch (error) {
+      setStatus("Queue failed");
+      toast(error.message, true);
+    } finally {
+      updateComposeCount();
+    }
+  }
+
   async function showProviders() {
     const dialog = $("providers-dialog");
     const list = $("providers-list");
@@ -621,6 +666,10 @@
 
     $("providers").addEventListener("click", showProviders);
     $("providers-close").addEventListener("click", () => $("providers-dialog").close());
+    $("compose").addEventListener("click", openCompose);
+    $("compose-cancel").addEventListener("click", () => $("compose-dialog").close());
+    $("compose-form").addEventListener("submit", queuePost);
+    $("compose-body").addEventListener("input", updateComposeCount);
     $("ask").addEventListener("submit", runAsk);
 
     $("autopost-off").addEventListener("click", async () => {

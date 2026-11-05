@@ -201,6 +201,90 @@ fn spawn_server(data: &Path, config: &Path) -> Server {
 }
 
 #[test]
+fn ui_post_queues_an_approval_and_sends_nothing() {
+    let dir: TempDir = tempfile::tempdir().expect("tempdir");
+    let data: PathBuf = dir.path().join("data");
+    let config = dir.path().join("config.toml");
+    std::fs::create_dir_all(&data).expect("data dir");
+
+    let init_output = Command::cargo_bin("herald")
+        .expect("binary builds")
+        .arg("--data-dir")
+        .arg(&data)
+        .arg("--config")
+        .arg(&config)
+        .arg("init")
+        .output()
+        .expect("init runs");
+    assert!(init_output.status.success(), "init failed");
+
+    let server = spawn_server(&data, &config);
+    let port = server.port;
+    let token = server.token.clone();
+
+    let body = "herald e2e: compose should queue, never send";
+    let posted = request(
+        port,
+        "POST",
+        "/api/post",
+        &[
+            ("X-Herald-Token", token.as_str()),
+            ("Content-Type", "application/json"),
+        ],
+        Some(&format!("{{\"body\":\"{body}\",\"provider\":\"fake\"}}")),
+    );
+    assert_eq!(posted.status, 200, "post body: {}", posted.body);
+    assert!(
+        posted.body.contains("\"awaiting_approval\""),
+        "post response: {}",
+        posted.body
+    );
+    assert!(
+        posted.body.contains(body),
+        "the queued body is echoed: {}",
+        posted.body
+    );
+
+    let approvals = server.get("/api/approvals");
+    assert!(
+        approvals.body.contains("\"count\":1"),
+        "approvals: {}",
+        approvals.body
+    );
+    assert!(
+        approvals.body.contains(body),
+        "approval carries the exact body: {}",
+        approvals.body
+    );
+
+    // No approval has been executed: the action is still waiting.
+    let history = server.get("/api/history?limit=5");
+    assert!(
+        history.body.contains("\"awaiting_approval\""),
+        "history shows the pending approval, nothing sent: {}",
+        history.body
+    );
+
+    // Over-long bodies and empty bodies are refused before reaching the CLI.
+    let too_long = format!("{{\"body\":\"{}\",\"provider\":\"fake\"}}", "x".repeat(281));
+    let rejected = request(
+        port,
+        "POST",
+        "/api/post",
+        &[
+            ("X-Herald-Token", token.as_str()),
+            ("Content-Type", "application/json"),
+        ],
+        Some(&too_long),
+    );
+    assert!(
+        rejected.body.contains("\"ok\":false"),
+        "281 chars refused: {}",
+        rejected.body
+    );
+}
+
+#[test]
 fn ui_server_requires_the_token_and_serves_authenticated_requests() {
     let dir: TempDir = tempfile::tempdir().expect("tempdir");
     let data: PathBuf = dir.path().join("data");

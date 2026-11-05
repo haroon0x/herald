@@ -26,6 +26,7 @@ pub async fn run(
     engine: EngineArg,
     enable_send: bool,
     thread_override: Option<&str>,
+    body_env: Option<&str>,
 ) -> Result<u8, AppError> {
     let (provider, _adapter) = resolve_provider(app, provider_override)?;
     let model = model_for(app, engine).await?;
@@ -47,7 +48,24 @@ pub async fn run(
             thread_id: ThreadId::new(thread),
         };
     }
-    if let Some(model) = model.as_ref() {
+    if let Some(var) = body_env {
+        // A caller that already holds the exact body (the UI) supplies it via
+        // the environment, never argv. Empty or missing is an error.
+        let body = std::env::var(var)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::new(
+                    "invalid_plan",
+                    format!("--body-env {var} is not set or is empty"),
+                )
+            })?;
+        if plan.operation.needs_body() {
+            plan.needs_clarification = false;
+            plan.clarification_question = None;
+        }
+        plan.reply_body = Some(body);
+    } else if let Some(model) = model.as_ref() {
         planner::draft_missing_body(model, &mut plan, instruction).await;
     }
 

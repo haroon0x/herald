@@ -12,6 +12,8 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Added
 
+- **`herald ask --body-env <VAR>`** and a **Compose** button in `herald ui`: the exact post body travels via the environment (never argv), the UI queues an approval through `POST /api/post` (`ask "post exactly:" --enable-send`), and nothing is sent without `herald approve`.
+
 - The configured inference backend (managed llama-server, an OpenAI-compatible
   local endpoint, or the opencode pool) now drafts original posts from a topic:
   `tweet about the local-first release`. The classifier can select

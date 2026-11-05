@@ -72,6 +72,10 @@ pub enum Command {
         /// Target this exact thread id instead of resolving a phrase.
         #[arg(long)]
         thread: Option<String>,
+        /// Read the exact outbound body from this environment variable instead of the model.
+        /// For callers that already hold the body (the UI); empty or unset is an error.
+        #[arg(long, value_name = "VAR")]
+        body_env: Option<String>,
     },
     /// Dry run: show the validated plan and policy decision. No writes.
     Plan {

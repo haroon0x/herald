@@ -598,3 +598,76 @@ fn a_topic_only_post_without_a_model_asks_for_the_text() {
     assert_eq!(data(&ask)["status"], "clarification_required");
     assert_eq!(data(&ask)["question"], "What should the post say?");
 }
+
+#[test]
+fn ask_with_body_env_queues_the_exact_body_and_sends_nothing() {
+    let env = Env::new();
+    let body = "Shipping the X adapter today.";
+
+    let (queued, output) = env.json(
+        &[
+            "ask",
+            "post exactly:",
+            "--provider",
+            "fake",
+            "--body-env",
+            "HERALD_BODY",
+            "--enable-send",
+        ],
+        &[("HERALD_BODY", body)],
+    );
+    assert!(output.status.success());
+    assert_eq!(data(&queued)["status"], "awaiting_approval");
+    assert_eq!(data(&queued)["operation"], "create_post");
+    assert_eq!(data(&queued)["body"], body);
+    assert_eq!(data(&queued)["thread_id"], "timeline");
+
+    // The approval is queued, nothing has been sent.
+    let (approvals, output) = env.json(&["approvals"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&approvals)["count"], 1);
+    assert_eq!(data(&approvals)["approvals"][0]["body"], body);
+
+    let (history, output) = env.json(&["history"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&history)["actions"][0]["state"], "awaiting_approval");
+}
+
+#[test]
+fn ask_with_body_env_rejects_an_empty_variable() {
+    let env = Env::new();
+
+    let (missing, output) = env.json(
+        &[
+            "ask",
+            "post exactly:",
+            "--provider",
+            "fake",
+            "--body-env",
+            "HERALD_BODY_MISSING",
+            "--enable-send",
+        ],
+        &[],
+    );
+    assert!(!output.status.success());
+    assert_eq!(missing["error"]["code"], "invalid_plan");
+
+    let (empty, output) = env.json(
+        &[
+            "ask",
+            "post exactly:",
+            "--provider",
+            "fake",
+            "--body-env",
+            "HERALD_BODY_EMPTY",
+            "--enable-send",
+        ],
+        &[("HERALD_BODY_EMPTY", "   ")],
+    );
+    assert!(!output.status.success());
+    assert_eq!(empty["error"]["code"], "invalid_plan");
+
+    let (approvals, output) = env.json(&["approvals"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&approvals)["count"], 0);
+}

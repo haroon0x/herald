@@ -187,6 +187,10 @@ fn spawn_server(data: &Path, config: &Path) -> Server {
         let mut line = String::new();
         let _ = reader.read_line(&mut line);
         let _ = sender.send(line);
+        // Keep draining until the child exits so it never writes to a closed
+        // pipe and dies of EPIPE mid-startup.
+        let mut rest = String::new();
+        let _ = reader.read_to_string(&mut rest);
     });
 
     let first_line = receiver
@@ -221,6 +225,24 @@ fn ui_server_requires_the_token_and_serves_authenticated_requests() {
     let server = spawn_server(&data, &config);
     let port = server.port;
     let token = server.token.clone();
+
+    // The startup line is printed after the URL file is written, so by the
+    // time we have the token the file must exist and carry it.
+    let url_file = data.join("ui-url");
+    let url_contents = std::fs::read_to_string(&url_file).expect("ui-url file is written");
+    assert!(
+        url_contents.contains(&format!("http://127.0.0.1:{port}/?token={token}")),
+        "ui-url contains the printed URL with the per-run token"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&url_file)
+            .expect("ui-url metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "ui-url must be mode 0600");
+    }
 
     // No token: the page is refused.
     let denied = request(port, "GET", "/", &[], None);

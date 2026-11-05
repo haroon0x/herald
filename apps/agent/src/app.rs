@@ -158,7 +158,7 @@ pub async fn run(cli: Cli) -> Result<u8, AppError> {
             commands::init::run(&cli, *force)?;
             return Ok(0);
         }
-        Command::Ui { port } => return crate::ui::serve(&cli, *port),
+        Command::Ui { port, open } => return crate::ui::serve(&cli, *port, *open),
         _ => {}
     }
 

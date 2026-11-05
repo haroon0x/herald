@@ -21,6 +21,7 @@ not as released behaviour until the canary in the milestone handoff passes.
 - **`herald ui`**: a loopback browser UI over the same CLI and approval queue.
   Per-run token, Origin check, CSP, no inline script, explicit endpoints, one
   command at a time. See [ADR 0010](docs/decisions/0010-local-web-ui.md).
+- **`herald ui --open`** opens the printed URL via `xdg-open`, and the server writes the URL to `<data-dir>/ui-url` (mode `0600`, atomic) so a systemd user service can serve it (`contrib/systemd/herald-ui.service`); see [contrib/README.md](contrib/README.md).
 
 - **X provider** (`x`): reads mentions and DMs, replies, sends DMs, and creates
   original posts through a dedicated Chrome profile driven by `chromiumoxide`.

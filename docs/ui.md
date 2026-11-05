@@ -15,7 +15,16 @@ herald ui
 ```
 
 Open the printed URL. The token is per run and required by every API call; a
-URL without it is refused. `--port 0` picks a free port. `Ctrl+C` stops it.
+URL without it is refused. `--port 0` picks a free port. `--open` launches the
+printed URL with `xdg-open` (failures are ignored and the server keeps
+running; Unix only). `Ctrl+C` stops it.
+
+On every start the server writes the full URL — including the per-run token —
+to `<data-dir>/ui-url` (mode `0600`, replaced atomically). To run the UI
+permanently as a systemd user service, see
+[contrib/README.md](../contrib/README.md): it runs `herald ui --port 8787`,
+and the URL is `cat ~/.local/share/herald/ui-url` (or `journalctl --user -u
+herald-ui.service`).
 
 ## What it does
 

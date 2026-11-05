@@ -163,6 +163,9 @@ pub enum Command {
         /// Port to bind. Use 0 for a free port.
         #[arg(long, default_value_t = 7878)]
         port: u16,
+        /// Open the printed URL in the default browser (xdg-open). Failures are ignored.
+        #[arg(long)]
+        open: bool,
     },
 }
 

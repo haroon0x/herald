@@ -587,15 +587,20 @@ Everything still goes through the approval queue. Nothing autoposts.
 ### `herald ui`
 
 ```text
-herald ui [--port PORT]
+herald ui [--port PORT] [--open]
 ```
 
 Serves the local browser UI on `127.0.0.1` and prints a URL with a per-run
-token. `--port 0` picks a free port. Every API call needs the token; the page
-cannot be opened without it. See [ui.md](ui.md).
+token. `--port 0` picks a free port. `--open` launches the printed URL with
+`xdg-open` (failures are ignored, the server keeps running; Unix only). On
+start, the server writes the URL to `<data-dir>/ui-url` with mode `0600`
+(replaced atomically), which is how a supervised `herald ui` hands the URL to
+you — see [contrib/README.md](../contrib/README.md) for a systemd user unit.
+Every API call needs the token; the page cannot be opened without it. See
+[ui.md](ui.md).
 
 ```console
-$ herald ui
+$ herald ui --open
 Herald UI  http://127.0.0.1:7878/?token=4f1c…
 Loopback only. Every API call needs the token. Ctrl+C stops it.
 Approvals and autopost are the same rails as the CLI.

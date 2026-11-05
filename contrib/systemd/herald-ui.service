@@ -1,0 +1,12 @@
+[Unit]
+Description=Herald local browser UI
+Documentation=https://github.com/haroon0x/herald
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/herald ui --port 8787
+Restart=on-failure
+Environment=HERALD_LOG=warn
+
+[Install]
+WantedBy=default.target

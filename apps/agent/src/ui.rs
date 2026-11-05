@@ -11,10 +11,11 @@
 
 use std::io::Read as _;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use herald_config::{ensure_private_dir, resolve_data_dir};
 use serde_json::{Value, json};
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -37,7 +38,7 @@ struct Context {
 }
 
 /// Start the server and block until the process is stopped.
-pub fn serve(cli: &Cli, port: u16) -> Result<u8, AppError> {
+pub fn serve(cli: &Cli, port: u16, open: bool) -> Result<u8, AppError> {
     let server = Server::http(("127.0.0.1", port)).map_err(|error| {
         AppError::new("ui", format!("could not bind 127.0.0.1:{port}: {error}"))
             .with_hint("Pick another port with `herald ui --port 0` for a free one.")
@@ -47,6 +48,23 @@ pub fn serve(cli: &Cli, port: u16) -> Result<u8, AppError> {
         .to_ip()
         .map_or(port, |address| address.port());
     let token = uuid::Uuid::new_v4().simple().to_string();
+    let url = format!("http://127.0.0.1:{bound_port}/?token={token}");
+    // The URL file is how a supervised `herald ui` (systemd user unit) hands
+    // the per-run URL to the human; it carries the token, so it is written
+    // 0600 and replaced atomically.
+    let data_dir = resolve_data_dir(cli.data_dir.as_deref()).map_err(|error| {
+        AppError::new(
+            "ui",
+            format!("could not resolve the data directory: {error}"),
+        )
+    })?;
+    ensure_private_dir(&data_dir).map_err(|error| {
+        AppError::new(
+            "ui",
+            format!("could not create the data directory: {error}"),
+        )
+    })?;
+    write_ui_url(&data_dir, &url)?;
     let context = Context {
         data_dir: cli.data_dir.clone(),
         config: cli.config.clone(),
@@ -55,10 +73,14 @@ pub fn serve(cli: &Cli, port: u16) -> Result<u8, AppError> {
         gate: Arc::new(Mutex::new(())),
     };
 
-    println!("Herald UI  http://127.0.0.1:{bound_port}/?token={token}");
+    println!("Herald UI  {url}");
     println!("Loopback only. Every API call needs the token. Ctrl+C stops it.");
     println!("Approvals and autopost are the same rails as the CLI.");
     let _ = std::io::stdout().flush();
+
+    if open {
+        open_browser(&url);
+    }
 
     for request in server.incoming_requests() {
         let context = context.clone();
@@ -66,6 +88,59 @@ pub fn serve(cli: &Cli, port: u16) -> Result<u8, AppError> {
     }
     Ok(0)
 }
+
+/// Write the per-run URL to `<data-dir>/ui-url`, replacing any previous
+/// file atomically. The file carries the session token, so it is created
+/// with mode 0600 on Unix before the rename.
+fn write_ui_url(data_dir: &Path, url: &str) -> Result<(), AppError> {
+    let target = data_dir.join("ui-url");
+    let temporary = data_dir.join(format!(".ui-url.{}.tmp", uuid::Uuid::new_v4().simple()));
+    let result = (|| -> std::io::Result<()> {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        file.write_all(url.as_bytes())?;
+        file.write_all(b"\n")?;
+        match std::fs::rename(&temporary, &target) {
+            Ok(()) => Ok(()),
+            // Windows cannot replace an existing file with rename.
+            Err(first) if target.exists() => {
+                std::fs::remove_file(&target)?;
+                std::fs::rename(&temporary, &target).map_err(|_| first)
+            }
+            Err(error) => Err(error),
+        }
+    })();
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(AppError::new(
+            "ui",
+            format!("could not write {}: {error}", target.display()),
+        ));
+    }
+    Ok(())
+}
+
+/// Launch `xdg-open` on the URL without waiting for it. Browser failures
+/// are not the server's problem, so they are ignored.
+#[cfg(unix)]
+fn open_browser(url: &str) {
+    let _ = Command::new("xdg-open")
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
+/// Browsers are only wired up on Unix; elsewhere the flag does nothing.
+#[cfg(not(unix))]
+fn open_browser(_url: &str) {}
 
 fn handle_request(mut request: Request, context: &Context) {
     let url = request.url().to_string();

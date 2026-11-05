@@ -359,6 +359,23 @@ pub fn binary_from_env() -> Option<PathBuf> {
     std::env::var_os("HERALD_LLAMA_SERVER").map(PathBuf::from)
 }
 
+/// Find an executable by name on `PATH`, so a normal `llama-server` install
+/// works without an absolute path in the environment.
+#[must_use]
+pub fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    find_in_paths(name, std::env::split_paths(&path))
+}
+
+/// Pure half of [`find_on_path`], testable without touching the environment.
+#[must_use]
+pub fn find_in_paths(name: &str, paths: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    paths
+        .into_iter()
+        .map(|directory| directory.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
 /// Where downloaded models live for a given data directory.
 #[must_use]
 pub fn model_path(data_dir: &Path, filename: &str) -> PathBuf {
@@ -368,6 +385,18 @@ pub fn model_path(data_dir: &Path, filename: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_binary_is_found_on_a_path_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("llama-server");
+        std::fs::write(&binary, b"#!/bin/sh\n").unwrap();
+        let found = find_in_paths("llama-server", [dir.path().to_path_buf()]);
+        assert_eq!(found.as_deref(), Some(binary.as_path()));
+        assert!(
+            find_in_paths("definitely-not-a-binary-here", [dir.path().to_path_buf()]).is_none()
+        );
+    }
 
     #[test]
     fn arguments_bind_to_loopback_only() {

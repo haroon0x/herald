@@ -178,10 +178,10 @@ pub async fn build_model(
                 ));
             }
 
-            let binary = std::env::var_os("HERALD_LLAMA_SERVER").map_or_else(
-                || std::path::PathBuf::from("llama-server"),
-                std::path::PathBuf::from,
-            );
+            let binary = std::env::var_os("HERALD_LLAMA_SERVER")
+                .map(PathBuf::from)
+                .or_else(|| herald_runtime::sidecar::find_on_path("llama-server"))
+                .unwrap_or_else(|| PathBuf::from("llama-server"));
             let mut sidecar = SidecarConfig::new(binary, &model_file);
             sidecar.context_size = config.model.context_size;
             sidecar.threads = config.model.threads;

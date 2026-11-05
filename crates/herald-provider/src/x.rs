@@ -103,6 +103,8 @@ const SEEN_LEDGER_LIMIT: usize = 5_000;
 /// stops a script (or a repeated approval) from turning into a burst, which is
 /// the behaviour most likely to get an account actioned.
 const MIN_WRITE_INTERVAL_MS: i64 = 60_000;
+/// X's hard limit for an original post.
+const MAX_POST_CHARS: usize = 280;
 /// Hard local ceiling on outbound X actions per rolling hour.
 const MAX_WRITES_PER_HOUR: usize = 6;
 /// Hard local ceiling on outbound X actions per UTC day.
@@ -632,6 +634,12 @@ impl XProvider {
             ));
         }
         let target = resolve_target(id)?;
+        if target == XTarget::Timeline && body.chars().count() > MAX_POST_CHARS {
+            return Err(ProviderError::Other(format!(
+                "an X post is limited to {MAX_POST_CHARS} characters; this body has {}",
+                body.chars().count()
+            )));
+        }
         // Verification needs an identity to match the posted message against.
         self.require_handle()?;
 

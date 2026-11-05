@@ -50,6 +50,11 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
             "tweet exactly",
             "tweet this",
             "tweet:",
+            "post about",
+            "tweet about",
+            "write a post",
+            "write a tweet",
+            "share a post",
         ],
     );
 
@@ -512,6 +517,19 @@ mod tests {
         let plan = plan(r#"tweet exactly: "hello from herald""#);
         assert_eq!(plan.operation, Operation::CreatePost);
         assert_eq!(plan.target, Target::Timeline);
+    }
+
+    #[test]
+    fn a_topic_only_post_is_still_a_timeline_clarification() {
+        for instruction in [
+            "Tweet about the local-first release.",
+            "Post about the launch.",
+            "write a tweet about the new build",
+        ] {
+            let plan = plan_offline(ProviderId::X, instruction).expect("a post plan");
+            assert!(plan.needs_clarification, "{instruction}");
+            assert_eq!(plan.target, Target::Timeline);
+        }
     }
 
     #[test]

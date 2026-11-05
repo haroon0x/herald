@@ -368,15 +368,18 @@ at once:
 | Tier | Task | Who does it | Output |
 | --- | --- | --- | --- |
 | 0 | Common commands | Rules router | `ActionPlan` |
-| 1 | Intent classification | Local model, grammar-constrained | One of seven operations, a clarification flag, and the two phrases the model may name |
+| 1 | Intent classification | Local model, grammar-constrained | One of eight operations (including `create_post`), a clarification flag, and the two phrases the model may name |
 | 2 | Target resolution | Rust, against provider data | `ThreadId` |
-| 3 | Drafting and summarization | Local model, plain text | Reply body or thread summary |
+| 3 | Drafting and summarization | Local model, plain text | Reply body, post body, or thread summary |
 
 Tier 1 asks one question with four fields: the flag, the operation, and the
 target phrase and question the model may name better than the regex does. The
 two phrases are only hints; an empty one falls back to `rules::target_hint` and
 validation still gates everything. Tier 3 is plain text with no JSON,
-and every message in a summary prompt is wrapped as untrusted. Tier 2 never
+and every message in a summary prompt is wrapped as untrusted. A `create_post`
+classification is forced to `Target::Timeline`; a post body drafted from a topic
+is capped at 280 characters, then approved or scored by the autopost rails like
+any other body. Tier 2 never
 involves the model. This split is why a 0.8B model is usable: it is a
 classifier and a writer, not an agent.
 

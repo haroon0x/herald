@@ -184,7 +184,7 @@ profile. See [providers.md](providers.md#x-browser-adapter) and
 
 | Key | Type | Default | Example | Notes |
 | --- | --- | --- | --- | --- |
-| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`, `opencode`. |
+| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`, `opencode`. Every backend is used for classification, reply/post drafting, and summaries. |
 | `endpoint` | string | none | `"http://127.0.0.1:11434/v1"` | Required for `openai`. Must be `http://` or `https://`. |
 | `model_name` | string | none | `"qwen3.5:0.8b"` | Required for `openai`; for `opencode` it is the model id (default `opencode/glm-5.3-flash-free`). |
 | `manifest` | path | `<data-dir>/models/manifest.json` | `"~/models/qwen.json"` | Used by `managed`. Relative paths resolve against the data directory. |

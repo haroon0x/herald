@@ -297,6 +297,8 @@ evasion. Signing in from a normal window, then reusing the profile for Herald's
 own operations, needs no trick and keeps the credential entry entirely human.
 Close the window when done; Herald verifies the session afterwards.
 
+X refuses posts longer than 280 characters, and so does Herald.
+
 Herald's own browser is launched with a minimal flag set, so it no longer passes
 `--enable-automation` (the "controlled by automated software" infobar and the
 `navigator.webdriver` marker). It does not spoof fingerprints or hide CDP:
@@ -336,6 +338,16 @@ for a follow or a system notice, and Herald does not invent one.
 Unread is **local**: X exposes no reliable unread state in the DOM, so the
 adapter keeps a bounded seen-ledger at `<data-dir>/x-seen.json` and
 `get_thread` marks what it showed as seen.
+
+### Drafting posts with the local model
+
+A post can be requested by topic ("tweet about the launch") instead of exact
+text. Any configured inference backend drafts the body: managed
+`llama-server`, an OpenAI-compatible local endpoint, or the `opencode` pool.
+The draft is capped at 280 characters (longer drafts are refused, never
+truncated), then follows the normal path: approval — or the autopost rails,
+which include the deterministic quality floor — before anything is typed into
+X. `herald ask 'post exactly: “…”'` still sends the user's exact words.
 
 ### Writes, idempotency, and verification
 

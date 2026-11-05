@@ -209,6 +209,18 @@ target:     check what is unread
 new:        2 recorded
 ```
 
+A post requested by topic is drafted by the configured model and then follows
+the normal approval path:
+
+```console
+$ herald ask 'tweet about the local-first release' --provider x --enable-send
+provider:   x
+operation:  create_post
+target:     your timeline
+body:       Shipped the local-first release. Your comms, your machine.
+hash:       0754...
+```
+
 An original post goes to the timeline, not a conversation:
 
 ```console

@@ -42,6 +42,10 @@ Every rail must pass, or the action falls back to the normal approval queue:
 5. The deterministic quality score of the body is at least
    `autopost_min_quality` (default 7 of 10).
 
+A model-drafted post is still an original timeline post: it enters this lane
+only when every rail passes, and its text is scored like any other post. Drafts
+are capped at 280 characters and are never truncated.
+
 The lane executes through the same `prepare_reply` → `send_reply` →
 verification path and the same state machine as an approved send. Audit details
 are prefixed `autopost:`. A failed verification leaves the action `uncertain`

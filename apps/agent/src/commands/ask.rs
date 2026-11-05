@@ -51,13 +51,19 @@ pub async fn run(
         planner::draft_missing_body(model, &mut plan, instruction).await;
     }
 
+    let wants_post = plan.operation == herald_core::Operation::CreatePost;
     let action = match validate_plan(plan) {
         Ok(action) => action,
         Err(PlanError::ClarificationRequired(question)) => {
             return Ok(clarification(app, "ask", &question));
         }
         Err(PlanError::MissingReplyBody { .. }) => {
-            return Ok(clarification(app, "ask", "What should the reply say?"));
+            let question = if wants_post {
+                "What should the post say?"
+            } else {
+                "What should the reply say?"
+            };
+            return Ok(clarification(app, "ask", question));
         }
         Err(error) => {
             return Err(AppError::new("invalid_plan", error.to_string()));
@@ -205,13 +211,19 @@ pub async fn dry_run(
         planner::draft_missing_body(model, &mut plan, instruction).await;
     }
 
+    let wants_post = plan.operation == herald_core::Operation::CreatePost;
     let action = match validate_plan(plan) {
         Ok(action) => action,
         Err(PlanError::ClarificationRequired(question)) => {
             return Ok(clarification(app, "plan", &question));
         }
         Err(PlanError::MissingReplyBody { .. }) => {
-            return Ok(clarification(app, "plan", "What should the reply say?"));
+            let question = if wants_post {
+                "What should the post say?"
+            } else {
+                "What should the reply say?"
+            };
+            return Ok(clarification(app, "plan", question));
         }
         Err(error) => return Err(AppError::new("invalid_plan", error.to_string())),
     };

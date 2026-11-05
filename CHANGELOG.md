@@ -12,6 +12,12 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Added
 
+- The configured inference backend (managed llama-server, an OpenAI-compatible
+  local endpoint, or the opencode pool) now drafts original posts from a topic:
+  `tweet about the local-first release`. The classifier can select
+  `create_post`; the target is always the timeline; drafts are capped at 280
+  characters and still pass approval or the autopost rails.
+
 - **`herald ui`**: a loopback browser UI over the same CLI and approval queue.
   Per-run token, Origin check, CSP, no inline script, explicit endpoints, one
   command at a time. See [ADR 0010](docs/decisions/0010-local-web-ui.md).

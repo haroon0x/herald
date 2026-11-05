@@ -586,3 +586,15 @@ fn x_login_requires_an_x_section_and_never_launches_blindly() {
     assert!(!output.status.success());
     assert_eq!(error["error"]["code"], "not_configured");
 }
+
+#[test]
+fn a_topic_only_post_without_a_model_asks_for_the_text() {
+    let env = Env::new();
+    let (ask, output) = env.json(
+        &["ask", "Tweet about the launch.", "--engine", "rules"],
+        &[],
+    );
+    assert!(output.status.success());
+    assert_eq!(data(&ask)["status"], "clarification_required");
+    assert_eq!(data(&ask)["question"], "What should the post say?");
+}

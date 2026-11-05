@@ -471,10 +471,17 @@ impl XProvider {
             }
             MessageScope::Notifications => {
                 client.open(NOTIFICATIONS_URL).await?;
-                // The notifications DOM is present as soon as the page paints;
-                // waiting on a selector here times out even when the cards are
-                // in the serialized document, so parse what rendered.
-                parse_notifications(&client.html().await?)?
+                // X sometimes paints the notifications shell before the cards
+                // hydrate. Poll the rendered document for a few seconds; an
+                // account with genuinely no notifications stays empty.
+                let started = std::time::Instant::now();
+                loop {
+                    let items = parse_notifications(&client.html().await?)?;
+                    if !items.is_empty() || started.elapsed() >= PAGE_TIMEOUT {
+                        break items;
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
             }
             MessageScope::All => {
                 client.open(MENTIONS_URL).await?;

@@ -49,6 +49,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- Notifications reads wait for the cards to hydrate after the shell paints, so a
+  fresh check does not falsely report an empty tab.
+
 - `herald ui` caches reads for five minutes per scope and never polls; the
   header shows when the scope was checked, and Refresh is the explicit check.
   Browser runs are headless again.

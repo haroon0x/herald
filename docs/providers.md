@@ -374,6 +374,14 @@ Replaying a token returns the stored receipt and never posts twice. An
 unverified result stays `uncertain`; `herald reconcile` reads the ledger through
 `find_sent` and never retries.
 
+### Browser budget
+
+Herald does not poll X. A read is one explicit command, and the UI caches the
+result for five minutes per scope. There is no background loop, no timer, and
+no scheduler in the adapter or in `herald ui`; the browser is closed after each
+command (`close_after`). `herald providers` performs one health check, and only
+when you ask for it.
+
 ### Hard stops and failures
 
 | Page state | Result |

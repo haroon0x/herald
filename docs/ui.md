@@ -35,6 +35,22 @@ Keyboard: `j`/`k` move, `Enter` opens, `/` filters, `r` refreshes, `q` queue,
 `h` history, `t` thread. Deep links: `/?token=…&provider=x&scope=feed&thread=mention:123`
 and `&tab=queue`. When approvals are waiting, the queue opens on load.
 
+## Browser budget and read cache
+
+The UI never polls X and never refreshes itself. One browser run happens when
+the UI starts (for the current scope), and then only when you press Refresh or
+open a thread that is not cached.
+
+- Read results are cached in memory for 5 minutes per provider/scope; switching
+  scopes or tabs inside that window does not launch Chrome.
+- Thread views are cached the same way.
+- The header shows `checked 2m ago`; Refresh bypasses the cache and checks once.
+- `x.headless = true` keeps those runs invisible; only `herald x login` opens a
+  window.
+- Requests are serialised server-side, so two tabs cannot start two browsers on
+  the same profile.
+- Closing the UI tab loses the cache; it does not stop or schedule anything.
+
 ## Security properties
 
 - Binds `127.0.0.1` only. It cannot be reached from another machine.

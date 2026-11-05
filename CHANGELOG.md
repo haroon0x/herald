@@ -49,6 +49,13 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- `herald ui` caches reads for five minutes per scope and never polls; the
+  header shows when the scope was checked, and Refresh is the explicit check.
+  Browser runs are headless again.
+- The `opencode` backend is the primary inference path; the managed GGUF is a
+  lazy fallback, and a fallback answer disables autopost for that run. Fixed
+  `[model] backend = "opencode"` parsing.
+
 - `herald ui` gets a warmer, denser layout, a client-side filter, keyboard
   navigation (`j`/`k`, `Enter`, `/`, `r`, `q`, `h`), and opens the queue on load
   when approvals are waiting.

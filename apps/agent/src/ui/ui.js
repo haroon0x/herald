@@ -12,10 +12,14 @@
     filtered: [],
     filter: "",
     cursor: 0,
+    cache: new Map(),
+    threadCache: new Map(),
     tab: "thread",
     busy: false,
     pendingApproval: null,
   };
+
+  const CACHE_TTL_MS = 5 * 60 * 1000;
 
   const scopeTitles = {
     all: "All",
@@ -181,7 +185,8 @@
   }
 
   function refreshAll() {
-    loadInbox();
+    // Explicit user action: bypass the read cache and check X exactly once.
+    loadInbox(true);
     loadApprovals();
     loadAutopost();
     loadHistory();
@@ -227,11 +232,20 @@
     state.selected = item.id;
     renderItems();
     switchTab("thread");
-    setStatus("Reading thread…", true);
+    const id = item.thread_id || item.id;
+    const key = `${state.provider}:${id}`;
+    const cached = state.threadCache.get(key);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      renderThread(cached.thread);
+      setStatus(`Cached thread · ${checkedLabel(cached.at)}`);
+      return;
+    }
+    setStatus("Reading thread (one browser run)…", true);
     try {
       const thread = await api(
-        `/api/thread?provider=${encodeURIComponent(state.provider)}&id=${encodeURIComponent(item.thread_id || item.id)}`,
+        `/api/thread?provider=${encodeURIComponent(state.provider)}&id=${encodeURIComponent(id)}`,
       );
+      state.threadCache.set(key, { thread, at: Date.now() });
       renderThread(thread);
       setStatus("Thread loaded");
     } catch (error) {
@@ -241,15 +255,42 @@
     }
   }
 
-  async function loadInbox() {
-    setStatus(`Reading ${scopeTitles[state.scope].toLowerCase()} from ${state.provider}…`, true);
+  function cacheKey() {
+    return `${state.provider}:${state.scope}`;
+  }
+
+  function checkedLabel(at) {
+    const minutes = Math.floor((Date.now() - at) / 60000);
+    return minutes < 1 ? "checked just now" : `checked ${minutes}m ago`;
+  }
+
+  function renderInboxMeta(at) {
+    $("count-line").textContent =
+      `${state.items.length} item(s) · ${state.provider} · ${state.scope} · ${checkedLabel(at)}`;
+  }
+
+  async function loadInbox(force = false) {
+    const key = cacheKey();
+    const cached = state.cache.get(key);
+    if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      state.items = cached.items;
+      state.cursor = 0;
+      renderItems();
+      renderInboxMeta(cached.at);
+      setStatus("Cached · press Refresh to check X");
+      return;
+    }
+
+    setStatus(`Checking ${scopeTitles[state.scope].toLowerCase()} (one browser run)…`, true);
     try {
       const data = await api(
         `/api/inbox?scope=${encodeURIComponent(state.scope)}&provider=${encodeURIComponent(state.provider)}&limit=20`,
       );
       state.items = data.messages || [];
+      state.cache.set(key, { items: state.items, at: Date.now() });
+      state.cursor = 0;
       renderItems();
-      $("count-line").textContent = `${state.items.length} item(s) · ${state.provider} · ${state.scope}`;
+      renderInboxMeta(Date.now());
       setStatus("Idle");
     } catch (error) {
       state.items = [];

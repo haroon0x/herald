@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use herald_config::{Config, ModelBackend};
 use herald_core::{ActionPlan, Operation, ProviderId, Target, Thread, rules};
 use herald_runtime::{
-    Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference, SidecarConfig,
+    FallbackInference, Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference,
+    SidecarConfig,
 };
 
 use crate::cli::EngineArg;
@@ -118,6 +119,12 @@ impl Model {
             .map_err(|error| AppError::new("model", format!("post drafting failed: {error}")))
     }
 
+    /// Whether any answer in this process came from the local fallback.
+    #[must_use]
+    pub fn used_fallback(&self) -> bool {
+        self.backend.used_fallback()
+    }
+
     /// Summarize one thread. Every message is wrapped as untrusted data.
     pub async fn summarize(&self, thread: &Thread, instruction: &str) -> Result<String, AppError> {
         let (system, user) = summarize_prompt(thread, instruction);
@@ -127,6 +134,44 @@ impl Model {
             .map(|text| text.trim().to_string())
             .map_err(|error| AppError::new("model", format!("summarization failed: {error}")))
     }
+}
+
+/// The managed sidecar configuration, when a manifest and model file exist.
+fn managed_sidecar(config: &Config, models_dir: &Path) -> Result<SidecarConfig, AppError> {
+    let manifest_path = config
+        .model
+        .manifest
+        .clone()
+        .unwrap_or_else(|| models_dir.join("manifest.json"));
+    let manifest = ModelManifest::load(&manifest_path).map_err(|error| {
+        AppError::new(
+            "model",
+            format!(
+                "loading model manifest {}: {error}",
+                manifest_path.display()
+            ),
+        )
+    })?;
+
+    let model_file = models_dir.join(&manifest.filename);
+    if !model_file.exists() {
+        return Err(AppError::new(
+            "model_missing",
+            format!(
+                "model file {} is missing; run `herald model download`",
+                model_file.display()
+            ),
+        ));
+    }
+
+    let binary = std::env::var_os("HERALD_LLAMA_SERVER")
+        .map(PathBuf::from)
+        .or_else(|| herald_runtime::sidecar::find_on_path("llama-server"))
+        .unwrap_or_else(|| PathBuf::from("llama-server"));
+    let mut sidecar = SidecarConfig::new(binary, &model_file);
+    sidecar.context_size = config.model.context_size;
+    sidecar.threads = config.model.threads;
+    Ok(sidecar)
 }
 
 /// Build the configured inference backend, if any.
@@ -152,40 +197,7 @@ pub async fn build_model(
     match config.model.backend {
         ModelBackend::None => Ok(None),
         ModelBackend::Managed => {
-            let manifest_path = config
-                .model
-                .manifest
-                .clone()
-                .unwrap_or_else(|| models_dir.join("manifest.json"));
-            let manifest = ModelManifest::load(&manifest_path).map_err(|error| {
-                AppError::new(
-                    "model",
-                    format!(
-                        "loading model manifest {}: {error}",
-                        manifest_path.display()
-                    ),
-                )
-            })?;
-
-            let model_file = models_dir.join(&manifest.filename);
-            if !model_file.exists() {
-                return Err(AppError::new(
-                    "model_missing",
-                    format!(
-                        "model file {} is missing; run `herald model download`",
-                        model_file.display()
-                    ),
-                ));
-            }
-
-            let binary = std::env::var_os("HERALD_LLAMA_SERVER")
-                .map(PathBuf::from)
-                .or_else(|| herald_runtime::sidecar::find_on_path("llama-server"))
-                .unwrap_or_else(|| PathBuf::from("llama-server"));
-            let mut sidecar = SidecarConfig::new(binary, &model_file);
-            sidecar.context_size = config.model.context_size;
-            sidecar.threads = config.model.threads;
-
+            let sidecar = managed_sidecar(config, models_dir)?;
             let sidecar = LlamaSidecar::start(&sidecar)
                 .await
                 .map_err(|error| AppError::new("model", format!("starting sidecar: {error}")))?;
@@ -213,9 +225,17 @@ pub async fn build_model(
                 .clone()
                 .unwrap_or_else(|| herald_runtime::opencode::DEFAULT_MODEL.to_string());
             let sandbox = data_dir.join("opencode-sandbox");
-            Ok(Some(Model::new(Box::new(OpenCodeInference::new(
-                binary, model, sandbox,
-            )))))
+            let primary = OpenCodeInference::new(binary, model, sandbox);
+            match managed_sidecar(config, models_dir) {
+                Ok(fallback) => Ok(Some(Model::new(Box::new(FallbackInference::new(
+                    Box::new(primary),
+                    fallback,
+                ))))),
+                Err(error) => {
+                    tracing::warn!(%error, "no local fallback model available");
+                    Ok(Some(Model::new(Box::new(primary))))
+                }
+            }
         }
     }
 }
@@ -612,6 +632,43 @@ mod tests {
         ) -> Result<String, herald_runtime::RuntimeError> {
             Ok(self.0.to_string())
         }
+    }
+
+    #[derive(Debug)]
+    struct FallbackStub;
+
+    #[async_trait::async_trait]
+    impl Inference for FallbackStub {
+        async fn complete_json(
+            &self,
+            _system: &str,
+            _user: &str,
+            _max_tokens: u16,
+            _schema: Option<&serde_json::Value>,
+        ) -> Result<String, herald_runtime::RuntimeError> {
+            Err(herald_runtime::RuntimeError::BadResponse("no".into()))
+        }
+
+        async fn complete_text(
+            &self,
+            _system: &str,
+            _user: &str,
+            _max_tokens: u16,
+        ) -> Result<String, herald_runtime::RuntimeError> {
+            Ok("fallback".into())
+        }
+
+        fn used_fallback(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn model_reports_that_a_fallback_answered() {
+        let model = Model::new(Box::new(FallbackStub));
+        assert!(model.used_fallback());
+        let model = Model::new(Box::new(StubInference("x")));
+        assert!(!model.used_fallback());
     }
 
     #[tokio::test]

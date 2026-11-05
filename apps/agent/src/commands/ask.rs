@@ -72,7 +72,12 @@ pub async fn run(
 
     print_action(app, &action);
 
-    let policy = policy(app, enable_send);
+    let mut policy = policy(app, enable_send);
+    if model.as_ref().is_some_and(Model::used_fallback) {
+        policy.autopost.enabled = false;
+        app.out
+            .warn("the local fallback model answered; autopost is disabled for this run");
+    }
     let decision = authorize(&action, &policy);
 
     match &decision {
@@ -229,7 +234,12 @@ pub async fn dry_run(
     };
 
     print_action(app, &action);
-    let policy = policy(app, enable_send);
+    let mut policy = policy(app, enable_send);
+    if model.as_ref().is_some_and(Model::used_fallback) {
+        policy.autopost.enabled = false;
+        app.out
+            .warn("the local fallback model answered; autopost is disabled for this run");
+    }
     let decision = authorize(&action, &policy);
 
     let (status, detail) = match &decision {

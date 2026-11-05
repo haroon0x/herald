@@ -49,7 +49,7 @@ pub enum RuntimeError {
 }
 
 pub use download::{DownloadStats, download_model, download_url};
-pub use inference::{Inference, OpenAiClient};
+pub use inference::{FallbackInference, Inference, OpenAiClient};
 pub use manifest::ModelManifest;
 pub use opencode::OpenCodeInference;
 pub use sidecar::{

@@ -32,9 +32,10 @@ approval_ttl_hours = 72
 # none: rules-only (no process, no model). managed: pinned llama-server.
 # openai: any OpenAI-compatible local endpoint (Ollama, LM Studio, vLLM).
 # opencode: local `opencode run --standalone --model <id>`, one-shot.
+# A managed GGUF, when present, is only a lazy fallback for provider failures.
 backend = "none"
-# For opencode, model_name is the model id (default glm-5.3-flash-free).
-# model_name = "opencode/glm-5.3-flash-free"
+# For opencode, model_name is provider/model, optionally with #variant.
+# model_name = "opencode-go/deepseek-v4.1-flash#low"
 # endpoint = "http://127.0.0.1:11434/v1"
 # model_name = "qwen2.5:1.5b-instruct"
 # manifest = "manifest.json"

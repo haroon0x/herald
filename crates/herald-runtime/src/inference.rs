@@ -41,6 +41,12 @@ pub trait Inference: Send + Sync + std::fmt::Debug {
         user: &str,
         max_tokens: u16,
     ) -> Result<String, RuntimeError>;
+
+    /// True when this answer came from a weaker fallback backend. Callers use
+    /// it to keep higher-risk paths (autopost) closed.
+    fn used_fallback(&self) -> bool {
+        false
+    }
 }
 
 #[async_trait]
@@ -62,6 +68,103 @@ impl Inference for LlamaSidecar {
         max_tokens: u16,
     ) -> Result<String, RuntimeError> {
         LlamaSidecar::complete_text(self, system, user, max_tokens).await
+    }
+}
+
+/// Primary backend plus a lazily started local GGUF fallback.
+///
+/// The fallback sidecar starts only when the primary fails, so a normal run
+/// never pays the memory cost. Once it has answered, [`Inference::used_fallback`]
+/// is true for the rest of the process.
+pub struct FallbackInference {
+    primary: Box<dyn Inference>,
+    fallback_config: crate::SidecarConfig,
+    fallback: tokio::sync::OnceCell<LlamaSidecar>,
+    used_fallback: std::sync::atomic::AtomicBool,
+}
+
+impl std::fmt::Debug for FallbackInference {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FallbackInference")
+            .field(
+                "used_fallback",
+                &self
+                    .used_fallback
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl FallbackInference {
+    #[must_use]
+    pub fn new(primary: Box<dyn Inference>, fallback_config: crate::SidecarConfig) -> Self {
+        Self {
+            primary,
+            fallback_config,
+            fallback: tokio::sync::OnceCell::new(),
+            used_fallback: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    async fn fallback(&self) -> Result<&LlamaSidecar, RuntimeError> {
+        let sidecar = self
+            .fallback
+            .get_or_try_init(|| async { LlamaSidecar::start(&self.fallback_config).await })
+            .await?;
+        self.used_fallback
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(sidecar)
+    }
+}
+
+#[async_trait]
+impl Inference for FallbackInference {
+    async fn complete_json(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: u16,
+        schema: Option<&serde_json::Value>,
+    ) -> Result<String, RuntimeError> {
+        match self
+            .primary
+            .complete_json(system, user, max_tokens, schema)
+            .await
+        {
+            Ok(answer) => Ok(answer),
+            Err(primary_error) => {
+                tracing::warn!(%primary_error, "primary model failed; starting local fallback");
+                self.fallback()
+                    .await?
+                    .complete_json(system, user, max_tokens, schema)
+                    .await
+            }
+        }
+    }
+
+    async fn complete_text(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: u16,
+    ) -> Result<String, RuntimeError> {
+        match self.primary.complete_text(system, user, max_tokens).await {
+            Ok(answer) => Ok(answer),
+            Err(primary_error) => {
+                tracing::warn!(%primary_error, "primary model failed; starting local fallback");
+                self.fallback()
+                    .await?
+                    .complete_text(system, user, max_tokens)
+                    .await
+            }
+        }
+    }
+
+    fn used_fallback(&self) -> bool {
+        self.used_fallback
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

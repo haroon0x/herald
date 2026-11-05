@@ -755,6 +755,7 @@ pub enum ModelBackend {
     #[serde(rename = "openai")]
     OpenAi,
     /// Local `opencode` CLI free-model pool (`opencode run --model ...`).
+    #[serde(rename = "opencode")]
     OpenCode,
 }
 

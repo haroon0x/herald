@@ -163,6 +163,11 @@ configured `password_env` that is missing from the environment is an error at
 provider construction, and the Maildir falls back to read-only with a warning.
 It is never a silent unauthenticated send.
 
+When `backend = "opencode"` and a managed GGUF is present, the GGUF is a
+lazy fallback: the sidecar starts only if the provider fails. Any answer that
+came from that fallback disables autopost for the run; the post still queues for
+approval. The managed model is never started just to idle.
+
 ### `[x]`
 
 The whole table is optional. When it is present, the registry builds the X

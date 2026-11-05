@@ -50,6 +50,9 @@
       <footer class="rail-foot">
         <span id="cfg-path">config: …</span>
         <span class="tiny">Nothing sends without approval.</span>
+        <span class="tiny" title="j/k move · Enter open · / filter · r refresh · q queue">
+          <kbd>j</kbd><kbd>k</kbd> <kbd>↵</kbd> <kbd>/</kbd> <kbd>r</kbd>
+        </span>
       </footer>
     </aside>
 
@@ -67,6 +70,17 @@
 
       <div class="columns">
         <section class="list-pane" aria-label="Messages">
+          <div class="list-tools">
+            <input
+              id="filter"
+              class="filter"
+              type="search"
+              placeholder="Filter loaded items"
+              aria-label="Filter loaded items"
+              autocomplete="off"
+            />
+            <span class="shortcut" id="list-count">0</span>
+          </div>
           <div id="list" class="list" aria-live="polite"></div>
         </section>
 

@@ -49,6 +49,12 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Changed
 
+- `herald ui` gets a warmer, denser layout, a client-side filter, keyboard
+  navigation (`j`/`k`, `Enter`, `/`, `r`, `q`, `h`), and opens the queue on load
+  when approvals are waiting.
+- The managed backend finds `llama-server` on `PATH`, so a normal install works
+  without `HERALD_LLAMA_SERVER`.
+
 - `herald ui` uses a quieter neutral interface: system sans, white surfaces, one
   teal accent, no textures or newspaper rules. Selected threads highlight one
   item, action states are colour-coded, and the autopost copy is plain English.

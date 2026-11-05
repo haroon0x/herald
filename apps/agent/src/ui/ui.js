@@ -9,6 +9,9 @@
     selected: null,
     approvals: [],
     history: [],
+    filtered: [],
+    filter: "",
+    cursor: 0,
     tab: "thread",
     busy: false,
     pendingApproval: null,
@@ -112,24 +115,44 @@
     node.replaceChildren(el("div", "list-empty", message));
   }
 
+  function applyFilter() {
+    const needle = state.filter.trim().toLowerCase();
+    state.filtered = needle
+      ? state.items.filter((item) =>
+          [item.sender, item.subject, item.thread_id, item.id]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(needle),
+        )
+      : state.items.slice();
+    if (state.cursor >= state.filtered.length) state.cursor = 0;
+    $("list-count").textContent = needle
+      ? `${state.filtered.length}/${state.items.length}`
+      : String(state.items.length);
+  }
+
   function renderItems() {
     const list = $("list");
     list.replaceChildren();
-    if (!state.items.length) {
-      if (state.scope === "dms") {
+    applyFilter();
+    if (!state.filtered.length) {
+      if (state.items.length) {
+        emptyList("Nothing matches this filter.");
+      } else if (state.scope === "dms") {
         emptyList("No DMs. X renders DMs in an embedded app Herald does not read yet.");
       } else {
         emptyList("Nothing on this surface.");
       }
       return;
     }
-    state.items.forEach((item, index) => {
+    state.filtered.forEach((item, index) => {
       const button = el("button", "item");
       button.type = "button";
-      button.style.animationDelay = `${Math.min(index * 22, 220)}ms`;
       button.dataset.id = item.id;
       if (item.unread) button.classList.add("is-unread");
       if (state.selected === item.id) button.classList.add("is-selected");
+      if (index === state.cursor) button.classList.add("is-cursor");
 
       button.append(el("span", "dot"));
       const body = el("span");
@@ -141,9 +164,27 @@
       body.append(meta, el("span", "item-subject", item.subject || "(no subject)"));
       body.append(el("span", "item-thread", item.thread_id || item.id));
       button.append(body);
-      button.addEventListener("click", () => openThread(item));
+      button.addEventListener("click", () => {
+        state.cursor = index;
+        openThread(item);
+      });
       list.append(button);
     });
+  }
+
+  function moveCursor(delta) {
+    if (!state.filtered.length) return;
+    const next = (state.cursor + delta + state.filtered.length) % state.filtered.length;
+    state.cursor = next;
+    renderItems();
+    document.querySelector(".item.is-cursor")?.scrollIntoView({ block: "nearest" });
+  }
+
+  function refreshAll() {
+    loadInbox();
+    loadApprovals();
+    loadAutopost();
+    loadHistory();
   }
 
   function threadError(message) {
@@ -470,11 +511,63 @@
       loadAutopost();
     });
 
-    $("refresh").addEventListener("click", () => {
-      loadInbox();
-      loadApprovals();
-      loadAutopost();
-      loadHistory();
+    $("refresh").addEventListener("click", refreshAll);
+
+    $("filter").addEventListener("input", (event) => {
+      state.filter = event.target.value;
+      state.cursor = 0;
+      renderItems();
+    });
+
+    $("filter").addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.target.value = "";
+        state.filter = "";
+        state.cursor = 0;
+        renderItems();
+        event.target.blur();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      const tag = event.target.tagName;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || document.querySelector("dialog[open]")) {
+        return;
+      }
+      switch (event.key) {
+        case "j":
+          moveCursor(1);
+          event.preventDefault();
+          break;
+        case "k":
+          moveCursor(-1);
+          event.preventDefault();
+          break;
+        case "Enter": {
+          const item = state.filtered[state.cursor];
+          if (item) openThread(item);
+          event.preventDefault();
+          break;
+        }
+        case "r":
+          refreshAll();
+          break;
+        case "q":
+          switchTab("queue");
+          break;
+        case "h":
+          switchTab("history");
+          break;
+        case "t":
+          switchTab("thread");
+          break;
+        case "/":
+          $("filter").focus();
+          event.preventDefault();
+          break;
+        default:
+          break;
+      }
     });
 
     $("providers").addEventListener("click", showProviders);
@@ -533,6 +626,8 @@
     } else if (params.get("tab") === "history") {
       switchTab("history");
     } else if (params.get("tab") === "queue") {
+      switchTab("queue");
+    } else if (state.approvals.length) {
       switchTab("queue");
     } else {
       switchTab("thread");

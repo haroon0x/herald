@@ -28,10 +28,12 @@ URL without it is refused. `--port 0` picks a free port. `Ctrl+C` stops it.
 | Ask | Runs `herald ask`; “Allow this request to create an approval” maps to `--enable-send`. |
 | Autopost | Shows the rails and writes the kill switch (`herald autopost off`). |
 | Providers | Health table from `herald providers` (X launches a browser; expect a delay). |
+| Filter | Client-side filter over the loaded list; `/` focuses it, `Esc` clears. |
 | History | Recent actions with state. `uncertain` sends expose Reconcile, which runs `herald reconcile` and never retries. |
 
-Deep links: `/?token=…&provider=x&scope=feed&thread=mention:123` and
-`&tab=queue`.
+Keyboard: `j`/`k` move, `Enter` opens, `/` filters, `r` refreshes, `q` queue,
+`h` history, `t` thread. Deep links: `/?token=…&provider=x&scope=feed&thread=mention:123`
+and `&tab=queue`. When approvals are waiting, the queue opens on load.
 
 ## Security properties
 

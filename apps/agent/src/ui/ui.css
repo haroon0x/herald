@@ -1,19 +1,19 @@
 /* Herald desk — minimal utility UI. Near-white canvas, white surfaces,
    one teal accent, thin neutral borders, system sans. */
 :root {
-  --bg: #f6f7f8;
-  --surface: #ffffff;
-  --surface-2: #f2f4f7;
-  --ink: #16181d;
-  --muted: #667085;
-  --border: #e4e7ec;
-  --accent: #0f766e;
-  --accent-soft: #ecfdf5;
-  --danger: #b42318;
-  --radius: 12px;
+  --bg: #f5f3ee;
+  --surface: #fffefa;
+  --surface-2: #efede5;
+  --ink: #1c1d1a;
+  --muted: #6b6a61;
+  --border: #e1ded3;
+  --accent: #17634f;
+  --accent-soft: #eaf2ec;
+  --danger: #a63a2b;
+  --radius: 10px;
   --warn: #b54708;
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "Noto Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "Noto Sans Mono", "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 16px rgba(16, 24, 40, 0.06);
 }
 
@@ -591,4 +591,112 @@ input:focus-visible {
 .badge {
   text-transform: none;
   letter-spacing: 0.02em;
+}
+
+
+/* ---- taste pass: density, warmth, keyboard affordances ---- */
+body { grid-template-columns: 220px minmax(0, 1fr); }
+.rail { padding: 18px 16px; gap: 18px; }
+.masthead h1 { font-size: 19px; letter-spacing: -0.02em; font-weight: 600; }
+.masthead h1::before { background: var(--accent); width: 8px; height: 8px; border-radius: 2px; }
+.scopes { gap: 1px; }
+.scope {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 450;
+}
+.scope.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.scope em { font-size: 11px; }
+.field span { font-size: 11px; }
+.field select { height: 34px; font-size: 13px; }
+.rail-actions .ghost { flex: 1; }
+.rail-foot { gap: 4px; }
+.rail-foot .tiny:last-child { line-height: 1.45; }
+.autopost { padding: 12px; }
+.autopost p { margin: 6px 0 9px; font-size: 12px; line-height: 1.45; }
+.badge { font-size: 10px; padding: 2px 8px; }
+
+.desk-head { padding: 16px 24px 14px; }
+.desk-head h2 { font-size: 20px; }
+.desk-meta .tiny { font-size: 11px; }
+
+.list-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px 0;
+}
+.filter {
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.filter::placeholder { color: var(--muted); }
+.shortcut {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.list { padding: 10px 14px 18px; gap: 6px; }
+.item {
+  padding: 11px 13px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: var(--surface);
+  gap: 9px;
+  grid-template-columns: 14px minmax(0, 1fr);
+}
+.item:hover { background: var(--surface); border-color: var(--border); }
+.item.is-selected { background: var(--accent-soft); border-color: var(--accent); }
+.item.is-cursor { box-shadow: inset 3px 0 0 var(--border); }
+.item.is-selected.is-cursor { box-shadow: inset 3px 0 0 var(--accent); }
+.item .dot { width: 7px; height: 7px; margin-top: 6px; }
+.item-sender { font-size: 12.5px; }
+.item-time { font-size: 11px; }
+.item-subject { font-size: 15px; margin-top: 2px; -webkit-line-clamp: 1; }
+.item-thread { font-size: 11px; margin-top: 3px; }
+
+.tabs { padding: 9px 20px 0; gap: 16px; }
+.tab { font-size: 12.5px; padding: 5px 1px 8px; }
+.tab em { font-size: 10.5px; }
+.thread-head { padding: 14px 20px 10px; }
+.thread-head h3 { font-size: 17px; }
+.message { padding: 12px 20px; }
+.message-meta { font-size: 11.5px; }
+.message-body { font-size: 13.5px; line-height: 1.55; margin-top: 5px; }
+.queue { padding: 12px 16px 20px; gap: 10px; }
+.approval { padding: 12px; }
+.approval-body { font-size: 12px; }
+
+.ask { padding: 10px 24px 13px; }
+.ask-row { align-items: center; }
+.ask textarea { font-size: 15px; padding: 6px 2px; }
+.run { height: 34px; padding: 0 16px; }
+.ask-foot { margin-top: 6px; }
+.toggle { font-size: 11.5px; }
+
+.empty { padding: 34px 20px; }
+.empty h3 { font-size: 15px; margin: 0 0 5px; }
+.empty p { font-size: 12.5px; max-width: 38ch; }
+
+kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 4px;
+  color: var(--muted);
+  background: var(--surface);
 }

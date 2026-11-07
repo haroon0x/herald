@@ -287,10 +287,6 @@ fn ask_action(body: &Value) -> Result<Vec<String>, ApiError> {
 
 impl Context {
     fn run(&self, args: &[String]) -> Value {
-        self.run_with_env(args, &[])
-    }
-
-    fn run_with_env(&self, args: &[String], env: &[(String, String)]) -> Value {
         let _guard = self
             .gate
             .lock()
@@ -306,9 +302,6 @@ impl Context {
             command.arg("--config").arg(config);
         }
         command.arg("--no-color").arg("--json").args(args);
-        for (key, value) in env {
-            command.env(key, value);
-        }
 
         match command.output() {
             Ok(output) => {

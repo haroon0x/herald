@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use herald_config::{Config, ModelBackend};
-use herald_core::{ActionPlan, Operation, ProviderId, Target, Thread, rules};
+use herald_core::{ActionPlan, Operation, ProviderId, Thread, rules};
 use herald_runtime::{
     FallbackInference, Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference,
     SidecarConfig,
@@ -267,14 +267,7 @@ pub fn plan_from_classification(
     instruction: &str,
     classification: &Classification,
 ) -> ActionPlan {
-    let phrase = classification.target.trim();
-    let target = if phrase.is_empty() {
-        rules::target_hint(instruction)
-    } else {
-        Target::Description {
-            description: phrase.to_string(),
-        }
-    };
+    let (target, body) = rules::classification_parts(instruction, &classification.target);
 
     let clarification_question = classification
         .needs_clarification
@@ -285,7 +278,7 @@ pub fn plan_from_classification(
         provider,
         operation: classification.operation,
         target,
-        reply_body: rules::body_hint(instruction),
+        reply_body: body,
         needs_clarification: classification.needs_clarification,
         clarification_question,
     }
@@ -430,7 +423,9 @@ fn object_end(raw: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herald_core::{MessageId, PlanError, ProviderMessage, ThreadId, Untrusted, validate_plan};
+    use herald_core::{
+        MessageId, PlanError, ProviderMessage, Target, ThreadId, Untrusted, validate_plan,
+    };
 
     #[test]
     fn finds_json_through_a_code_fence() {
@@ -502,7 +497,7 @@ mod tests {
             instruction,
             &classification(Operation::SummarizeThread, false, "", "   "),
         );
-        assert_eq!(plan.target, rules::target_hint(instruction));
+        assert_eq!(plan.target, rules::classification_parts(instruction, " ").0);
     }
 
     /// The regex only understands "from X", "to X" and outbound verbs. A phrase
@@ -527,7 +522,7 @@ mod tests {
             }
         );
         assert!(matches!(
-            rules::target_hint("Summarize the lease dispute thread."),
+            rules::classification_parts("Summarize the lease dispute thread.", " ").0,
             Target::Description { .. }
         ));
     }

@@ -74,7 +74,10 @@ fn main() {
             WebviewWindowBuilder::new(
                 app,
                 "main",
-                WebviewUrl::External(url.parse().map_err(|error| error.to_string())?),
+                WebviewUrl::External(
+                    url.parse::<tauri::Url>()
+                        .map_err(|error| error.to_string())?,
+                ),
             )
             .title("Herald")
             .inner_size(1200.0, 800.0)

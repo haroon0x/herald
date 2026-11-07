@@ -190,14 +190,6 @@ pub struct XItem {
     pub timestamp_ms: i64,
 }
 
-impl XItem {
-    /// The numeric status id when this item is a public post.
-    #[must_use]
-    pub fn status_id(&self) -> Option<&str> {
-        self.id.0.strip_prefix("mention:")
-    }
-}
-
 /// What the compose surface looks like on the current page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComposeState {

@@ -62,11 +62,6 @@ impl Operation {
     }
 
     #[must_use]
-    pub const fn is_outbound(self) -> bool {
-        matches!(self, Self::SendReply)
-    }
-
-    #[must_use]
     pub const fn needs_body(self) -> bool {
         matches!(self, Self::PrepareReply | Self::SendReply)
     }

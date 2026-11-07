@@ -290,22 +290,24 @@ fn find_outside_quotes(haystack: &str, needle: &str) -> Option<usize> {
     None
 }
 
-/// The unvalidated target a user's description points at.
+/// The target and outbound body for a classified request.
 ///
-/// Exposed as a hint for the tiered planner: the model (or CLI) produces a
-/// human description, and the provider adapter resolves it against real data.
-/// A hint is never a recipient.
+/// The model's phrase wins when it names one; otherwise the deterministic hint
+/// is the target, and quoted text in the instruction is the body. A hint is
+/// never an identity, and a missing body is not an error — the caller must not
+/// invent wording. This is the tiered planner's only handle on both questions
+/// at once; the two older single-question helpers are gone.
 #[must_use]
-pub fn target_hint(text: &str) -> Target {
-    extract_target(text)
-}
-
-/// The exact outbound text embedded in the instruction, if any.
-///
-/// Failure to find one is not an error: the caller must not invent wording.
-#[must_use]
-pub fn body_hint(text: &str) -> Option<String> {
-    extract_body(text)
+pub fn classification_parts(instruction: &str, phrase: &str) -> (Target, Option<String>) {
+    let phrase = phrase.trim();
+    let target = if phrase.is_empty() {
+        extract_target(instruction)
+    } else {
+        Target::Description {
+            description: phrase.to_string(),
+        }
+    };
+    (target, extract_body(instruction))
 }
 
 fn extract_body(text: &str) -> Option<String> {

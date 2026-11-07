@@ -172,8 +172,17 @@ async fn execute_read(
             })
         }
         ReadOperation::SearchMessages => {
+            let Some(terms) = search_terms(&read.target) else {
+                // validate_plan refuses the legacy timeline target, so this is
+                // unreachable in practice; an empty filter would match
+                // everything instead of refusing to guess.
+                return Err(AppError::new(
+                    "invalid_state",
+                    "the timeline target was removed; nothing can be searched for",
+                ));
+            };
             let query = MessageQuery {
-                search: Some(search_terms(&read.target)),
+                search: Some(terms),
                 limit: LIST_LIMIT,
                 ..MessageQuery::default()
             };
@@ -247,7 +256,7 @@ pub async fn resolve_thread(
         }
         Target::Description { description } => {
             let query = MessageQuery {
-                search: Some(search_terms(target)),
+                search: Some(strip_search_prefix(description)),
                 limit: RESOLVE_LIMIT,
                 ..MessageQuery::default()
             };
@@ -288,14 +297,15 @@ fn latest_matching<'a>(
         .find(|summary| summary.sender.to_lowercase().contains(needle))
 }
 
-fn search_terms(target: &Target) -> String {
+/// Search terms for a target, or `None` for the removed timeline target.
+/// `None` is an error, never an empty filter: an empty filter would match
+/// everything instead of refusing to guess.
+fn search_terms(target: &Target) -> Option<String> {
     match target {
-        Target::Description { description } => strip_search_prefix(description),
-        Target::LatestFrom { sender } => sender.clone(),
-        Target::Thread { thread_id } => thread_id.as_str().to_string(),
-        // validate_plan refuses the timeline target, so no read can reach
-        // here; an empty filter would match everything, so refuse to guess.
-        Target::Timeline => String::new(),
+        Target::Description { description } => Some(strip_search_prefix(description)),
+        Target::LatestFrom { sender } => Some(sender.clone()),
+        Target::Thread { thread_id } => Some(thread_id.as_str().to_string()),
+        Target::Timeline => None,
     }
 }
 

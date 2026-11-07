@@ -67,11 +67,6 @@ impl Decision {
     pub const fn is_allowed(&self) -> bool {
         matches!(self, Self::Allowed)
     }
-
-    #[must_use]
-    pub const fn requires_approval(&self) -> bool {
-        matches!(self, Self::NeedsApproval(_))
-    }
 }
 
 /// Apply the approval policy to a validated action.

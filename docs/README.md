@@ -53,6 +53,7 @@ contract.
 | [0009](decisions/0009-scoped-autopost.md) | Scoped autopost: original timeline posts only, every rail must pass | Superseded by 0011 |
 | [0010](decisions/0010-local-web-ui.md) | Local browser UI over the CLI; Tauri shell later | Accepted |
 | [0011](decisions/0011-no-posting-lane.md) | No posting lane in Herald; Zyquor owns generation and posting | Accepted |
+| [0012](decisions/0012-imap-provider.md) | IMAP provider: read-only Gmail via app passwords, mark-on-open, no send | Accepted |
 
 ## Project files
 

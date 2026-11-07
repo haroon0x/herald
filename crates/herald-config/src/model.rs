@@ -21,6 +21,8 @@ pub struct Config {
     pub policy: PolicySettings,
     /// Present only when local email is configured.
     pub maildir: Option<MaildirSettings>,
+    /// Present only when IMAP mail is configured.
+    pub imap: Option<ImapSettings>,
     /// Present only when the X (Twitter) browser adapter is configured.
     pub x: Option<XSettings>,
     pub model: ModelSettings,
@@ -32,6 +34,7 @@ impl Default for Config {
             default_provider: ProviderId::Fake,
             policy: PolicySettings::default(),
             maildir: None,
+            imap: None,
             x: None,
             model: ModelSettings::default(),
         }
@@ -43,7 +46,7 @@ impl Config {
     pub fn validate(&self) -> Result<(), ConfigError> {
         if !self.default_provider.is_implemented() {
             return Err(ConfigError::Invalid(format!(
-                "default_provider = \"{}\" is planned but has no adapter; choose `fake` or `maildir`",
+                "default_provider = \"{}\" is planned but has no adapter; choose `fake`, `maildir`, `imap`, or `x`",
                 self.default_provider
             )));
         }
@@ -68,6 +71,10 @@ impl Config {
 
         if let Some(maildir) = &self.maildir {
             maildir.validate()?;
+        }
+
+        if let Some(imap) = &self.imap {
+            imap.validate()?;
         }
 
         if let Some(x) = &self.x {
@@ -136,6 +143,7 @@ impl Config {
             self.model.model_name = Some(value);
         }
 
+        self.apply_imap_env(&get_env)?;
         self.apply_x_env(&get_env)?;
 
         Ok(())
@@ -187,6 +195,48 @@ impl Config {
         if let Some(value) = get_env("HERALD_X_READ_ONLY") {
             let x = self.x.get_or_insert_with(XSettings::empty);
             x.read_only = parse_bool("HERALD_X_READ_ONLY", &value)?;
+        }
+
+        Ok(())
+    }
+
+    /// `HERALD_IMAP_*` overrides, split out like `apply_x_env`.
+    fn apply_imap_env<F>(&mut self, get_env: &F) -> Result<(), ConfigError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        if let Some(value) = get_env("HERALD_IMAP_HOST") {
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.host = value;
+        }
+
+        if let Some(value) = get_env("HERALD_IMAP_PORT") {
+            let port = value
+                .trim()
+                .parse::<u16>()
+                .map_err(|_| ConfigError::Env("HERALD_IMAP_PORT".into()))?;
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.port = port;
+        }
+
+        if let Some(value) = get_env("HERALD_IMAP_USERNAME") {
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.username = Some(value);
+        }
+
+        if let Some(value) = get_env("HERALD_IMAP_FOLDER") {
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.folder = value;
+        }
+
+        if let Some(value) = get_env("HERALD_IMAP_TLS") {
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.use_tls = parse_bool("HERALD_IMAP_TLS", &value)?;
+        }
+
+        if let Some(value) = get_env("HERALD_IMAP_MARK_READ_ON_OPEN") {
+            let imap = self.imap.get_or_insert_with(ImapSettings::empty);
+            imap.mark_read_on_open = parse_bool("HERALD_IMAP_MARK_READ_ON_OPEN", &value)?;
         }
 
         Ok(())
@@ -256,6 +306,23 @@ impl Config {
             "policy.approval_ttl_hours".to_string(),
             self.policy.approval_ttl_hours.to_string(),
         );
+        if let Some(imap) = &self.imap {
+            values.insert("imap.host".to_string(), imap.host.clone());
+            values.insert("imap.port".to_string(), imap.port.to_string());
+            if let Some(username) = &imap.username {
+                values.insert("imap.username".to_string(), username.clone());
+            }
+            if let Some(env) = &imap.password_env {
+                values.insert("imap.password_env".to_string(), env.clone());
+            }
+            values.insert("imap.folder".to_string(), imap.folder.clone());
+            values.insert("imap.use_tls".to_string(), imap.use_tls.to_string());
+            values.insert(
+                "imap.mark_read_on_open".to_string(),
+                imap.mark_read_on_open.to_string(),
+            );
+        }
+
         if let Some(maildir) = &self.maildir {
             values.insert(
                 "maildir.path".to_string(),
@@ -347,6 +414,119 @@ impl Default for PolicySettings {
             max_body_chars: 8_000,
             approval_ttl_hours: 72,
         }
+    }
+}
+
+/// IMAP mail configuration. Read-only; sending is not part of v1.1.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ImapSettings {
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    /// Plaintext password. Prefer `password_env`; `doctor` warns about this.
+    pub password: Option<String>,
+    pub password_env: Option<String>,
+    pub folder: String,
+    pub use_tls: bool,
+    /// Opening a thread marks it read on the server. Default true, mirroring
+    /// the X adapter's local seen-ledger; set false to keep reads side-effect
+    /// free.
+    pub mark_read_on_open: bool,
+}
+
+impl Default for ImapSettings {
+    fn default() -> Self {
+        Self {
+            host: "imap.gmail.com".to_string(),
+            port: 993,
+            username: None,
+            password: None,
+            password_env: None,
+            folder: "INBOX".to_string(),
+            use_tls: true,
+            mark_read_on_open: true,
+        }
+    }
+}
+
+impl ImapSettings {
+    fn empty() -> Self {
+        Self {
+            host: String::new(),
+            port: 993,
+            username: None,
+            password: None,
+            password_env: None,
+            folder: "INBOX".to_string(),
+            use_tls: true,
+            mark_read_on_open: true,
+        }
+    }
+
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self.host.trim().is_empty() || self.host.contains(['\r', '\n', ' ']) {
+            return Err(ConfigError::Invalid(
+                "imap.host must be a hostname without spaces".into(),
+            ));
+        }
+        if self.port == 0 {
+            return Err(ConfigError::Invalid("imap.port must not be zero".into()));
+        }
+        if self.folder.trim().is_empty() {
+            return Err(ConfigError::Invalid("imap.folder must not be empty".into()));
+        }
+        if self.username.is_some() && self.password.is_none() && self.password_env.is_none() {
+            return Err(ConfigError::Invalid(
+                "imap has a username but no password or password_env".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Resolve the password. A direct value wins over the environment; a
+    /// configured environment variable that is missing is an error, not a
+    /// silent attempt to log in without credentials.
+    pub fn resolve_password<F>(&self, get_env: F) -> Result<Option<String>, ConfigError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        if let Some(password) = &self.password
+            && !password.is_empty()
+        {
+            return Ok(Some(password.clone()));
+        }
+        if let Some(name) = &self.password_env {
+            return match get_env(name) {
+                Some(value) if !value.is_empty() => Ok(Some(value)),
+                _ => Err(ConfigError::Env(name.clone())),
+            };
+        }
+        Ok(None)
+    }
+
+    /// `true` when a password is stored directly in the config file.
+    #[must_use]
+    pub fn stores_plaintext_password(&self) -> bool {
+        self.password
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
+    }
+}
+
+impl fmt::Debug for ImapSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImapSettings")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("password_env", &self.password_env)
+            .field("folder", &self.folder)
+            .field("use_tls", &self.use_tls)
+            .field("mark_read_on_open", &self.mark_read_on_open)
+            .finish()
     }
 }
 
@@ -750,6 +930,102 @@ mod tests {
         let rendered = format!("{smtp:?}");
         assert!(!rendered.contains("hunter2"));
         assert!(rendered.contains("redacted"));
+    }
+
+    #[test]
+    fn imap_defaults_target_gmail_tls() {
+        let settings = ImapSettings::default();
+        assert_eq!(settings.host, "imap.gmail.com");
+        assert_eq!(settings.port, 993);
+        assert_eq!(settings.folder, "INBOX");
+        assert!(settings.use_tls);
+        assert!(settings.mark_read_on_open);
+        assert!(Config::default().imap.is_none());
+    }
+
+    #[test]
+    fn imap_username_requires_a_password_source() {
+        let mut config = Config {
+            imap: Some(ImapSettings {
+                username: Some("me@gmail.com".into()),
+                ..ImapSettings::default()
+            }),
+            ..Config::default()
+        };
+        assert!(config.validate().is_err());
+        config.imap.as_mut().unwrap().password_env = Some("HERALD_IMAP_PASSWORD".into());
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn imap_password_resolves_like_smtp() {
+        let settings = ImapSettings {
+            password: Some("hunter2".into()),
+            password_env: Some("HERALD_IMAP_PASSWORD".into()),
+            ..ImapSettings::default()
+        };
+        assert_eq!(
+            settings.resolve_password(|_| None).unwrap().as_deref(),
+            Some("hunter2")
+        );
+
+        let settings = ImapSettings {
+            password_env: Some("HERALD_IMAP_PASSWORD".into()),
+            ..ImapSettings::default()
+        };
+        assert!(settings.resolve_password(|_| None).is_err());
+        assert_eq!(
+            settings
+                .resolve_password(|key| (key == "HERALD_IMAP_PASSWORD").then(|| "secret".into()))
+                .unwrap()
+                .as_deref(),
+            Some("secret")
+        );
+        let rendered = format!("{settings:?}");
+        assert!(!rendered.contains("secret"));
+    }
+
+    #[test]
+    fn imap_env_overrides_apply() {
+        let mut config = Config::default();
+        config
+            .apply_env(|key| match key {
+                "HERALD_IMAP_HOST" => Some("imap.example.com".into()),
+                "HERALD_IMAP_PORT" => Some("143".into()),
+                "HERALD_IMAP_USERNAME" => Some("me@example.com".into()),
+                "HERALD_IMAP_FOLDER" => Some("Archive".into()),
+                "HERALD_IMAP_TLS" => Some("off".into()),
+                "HERALD_IMAP_MARK_READ_ON_OPEN" => Some("0".into()),
+                _ => None,
+            })
+            .unwrap();
+        let imap = config.imap.unwrap();
+        assert_eq!(imap.host, "imap.example.com");
+        assert_eq!(imap.port, 143);
+        assert_eq!(imap.username.as_deref(), Some("me@example.com"));
+        assert_eq!(imap.folder, "Archive");
+        assert!(!imap.use_tls);
+        assert!(!imap.mark_read_on_open);
+    }
+
+    #[test]
+    fn flat_contains_imap_keys_only_when_set() {
+        let config = Config::default();
+        assert!(!config.flat().iter().any(|(k, _)| k.starts_with("imap.")));
+        let config = Config {
+            imap: Some(ImapSettings::default()),
+            ..Config::default()
+        };
+        let flat = config.flat();
+        for key in [
+            "imap.host",
+            "imap.port",
+            "imap.folder",
+            "imap.use_tls",
+            "imap.mark_read_on_open",
+        ] {
+            assert!(flat.iter().any(|(k, _)| k == key), "missing {key}");
+        }
     }
 
     #[test]

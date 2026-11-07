@@ -572,6 +572,34 @@ fn x_login_requires_an_x_section_and_never_launches_blindly() {
 }
 
 #[test]
+fn providers_list_imap_honestly_when_it_is_misconfigured() {
+    let env = Env::new();
+    let mut config = std::fs::read_to_string(&env.config).unwrap();
+    config.push_str(
+        "\n[imap]\nhost = \"imap.gmail.com\"\nusername = \"me@gmail.com\"\npassword_env = \"HERALD_IMAP_PASSWORD_DEFINITELY_UNSET\"\n",
+    );
+    std::fs::write(&env.config, config).unwrap();
+
+    let (providers, output) = env.json(&["providers"], &[]);
+    assert!(output.status.success());
+    let imap = data(&providers)["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["provider"] == "imap")
+        .expect("imap row exists");
+    assert_ne!(imap["status"], "ready");
+}
+
+#[test]
+fn imap_without_a_section_is_an_honest_error_not_a_fake_read() {
+    let env = Env::new();
+    let (ask, output) = env.json(&["ask", "check what's unread", "--provider", "imap"], &[]);
+    assert!(!output.status.success());
+    assert_eq!(ask["error"]["code"], "no_adapter");
+}
+
+#[test]
 fn posting_requests_get_an_honest_decline() {
     let env = Env::new();
     let (ask, output) = env.json(

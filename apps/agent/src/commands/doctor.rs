@@ -224,6 +224,19 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
         }
     }
 
+    if let Some(imap) = &app.config.imap {
+        if imap.stores_plaintext_password() {
+            checks.push(Check::warn(
+                "imap secret",
+                "password is stored in config.toml; prefer password_env",
+            ));
+        }
+        checks.push(Check::ok(
+            "imap",
+            format!("{}:{} ({})", imap.host, imap.port, imap.folder),
+        ));
+    }
+
     match app.config.model.backend {
         ModelBackend::None => checks.push(Check::ok("model", "none; rules only")),
         ModelBackend::OpenAi => {

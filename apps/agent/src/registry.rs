@@ -11,6 +11,7 @@ use std::sync::Arc;
 use herald_config::{Config, SmtpSecurity as ConfigSmtpSecurity};
 use herald_core::ProviderId;
 use herald_provider::fake::FakeProvider;
+use herald_provider::imap::{ImapProvider, ImapProviderConfig};
 use herald_provider::maildir::{MaildirConfig, MaildirProvider, SmtpConfig, SmtpSecurity};
 use herald_provider::x::{XConfig, XProvider};
 use herald_provider::{CommunicationProvider, ProviderError};
@@ -47,6 +48,29 @@ impl Registry {
                     adapters.insert(ProviderId::Maildir, Arc::new(provider));
                 }
                 Err(error) => warnings.push(format!("maildir provider disabled: {error}")),
+            }
+        }
+
+        if let Some(imap) = &config.imap {
+            let password = imap.resolve_password(|key| std::env::var(key).ok());
+            match password {
+                Ok(password) => {
+                    adapters.insert(
+                        ProviderId::Imap,
+                        Arc::new(ImapProvider::new(ImapProviderConfig {
+                            host: imap.host.clone(),
+                            port: imap.port,
+                            username: imap.username.clone(),
+                            password,
+                            folder: imap.folder.clone(),
+                            use_tls: imap.use_tls,
+                            mark_read_on_open: imap.mark_read_on_open,
+                        })),
+                    );
+                }
+                Err(error) => warnings.push(format!(
+                    "imap provider disabled: {error}. Set IMAP password via password_env (e.g. HERALD_IMAP_PASSWORD)."
+                )),
             }
         }
 

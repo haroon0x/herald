@@ -53,6 +53,21 @@ threads = 4
 # The browser profile is dedicated: never point profile_dir at your
 # everyday Chrome profile. Login is done once by the user in this
 # profile; Herald never extracts cookies or passwords.
+#
+# IMAP mail (read-only, Gmail). Uncomment and edit to use it for real mail.
+# App passwords only: Gmail accounts need 2-step verification enabled to
+# create one. Herald reads via IMAP; it never sends from this provider.
+# [imap]
+# host = "imap.gmail.com"
+# port = 993
+# username = "you@gmail.com"
+# # Prefer the environment over a plaintext password in this file:
+# #   export HERALD_IMAP_PASSWORD=...
+# password_env = "HERALD_IMAP_PASSWORD"
+# folder = "INBOX"
+# use_tls = true
+# mark_read_on_open = true   # opening a thread marks it read on the server
+#
 # [x]
 # profile_dir = "~/.local/share/herald/profiles/x"  # default under data dir
 # handle = "@you"  # display-only handle

@@ -12,6 +12,7 @@ use std::fmt;
 #[serde(rename_all = "snake_case")]
 pub enum ProviderId {
     Gmail,
+    Imap,
     X,
     Fake,
     Maildir,
@@ -19,12 +20,13 @@ pub enum ProviderId {
 
 impl ProviderId {
     /// Every provider this build knows about, implemented or planned.
-    pub const ALL: [Self; 4] = [Self::Fake, Self::Maildir, Self::Gmail, Self::X];
+    pub const ALL: [Self; 5] = [Self::Fake, Self::Maildir, Self::Imap, Self::X, Self::Gmail];
 
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Gmail => "gmail",
+            Self::Imap => "imap",
             Self::X => "x",
             Self::Fake => "fake",
             Self::Maildir => "maildir",
@@ -37,7 +39,7 @@ impl ProviderId {
     /// plan is inert instead of pretending a read happened.
     #[must_use]
     pub const fn is_implemented(self) -> bool {
-        matches!(self, Self::Fake | Self::Maildir | Self::X)
+        matches!(self, Self::Fake | Self::Maildir | Self::Imap | Self::X)
     }
 }
 
@@ -53,6 +55,7 @@ impl std::str::FromStr for ProviderId {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "gmail" => Ok(Self::Gmail),
+            "imap" => Ok(Self::Imap),
             "x" => Ok(Self::X),
             "fake" | "demo" => Ok(Self::Fake),
             "maildir" => Ok(Self::Maildir),
@@ -227,5 +230,16 @@ mod tests {
     fn planned_providers_are_marked_as_such() {
         assert!(!ProviderId::Gmail.is_implemented());
         assert!(ProviderId::X.is_implemented());
+        assert!(ProviderId::Imap.is_implemented());
+    }
+
+    #[test]
+    fn imap_round_trips_through_json_and_cli() {
+        assert_eq!("imap".parse::<ProviderId>().unwrap(), ProviderId::Imap);
+        assert_eq!(ProviderId::Imap.as_str(), "imap");
+        assert_eq!(
+            serde_json::to_string(&ProviderId::Imap).unwrap(),
+            "\"imap\"".to_string()
+        );
     }
 }

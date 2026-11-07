@@ -12,8 +12,8 @@ mod template;
 use std::path::{Path, PathBuf};
 
 pub use model::{
-    Config, MaildirSettings, ModelBackend, ModelSettings, PolicySettings, SmtpSecurity,
-    SmtpSettings, XSettings,
+    Config, ImapSettings, MaildirSettings, ModelBackend, ModelSettings, PolicySettings,
+    SmtpSecurity, SmtpSettings, XSettings,
 };
 pub use paths::{default_config_path, default_data_dir, ensure_private_dir, expand_tilde};
 pub use template::TEMPLATE;

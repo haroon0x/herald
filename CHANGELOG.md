@@ -12,6 +12,14 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Added
 
+- **IMAP provider** (`imap`): read-only Gmail IMAP via app passwords
+  (TLS via rustls). One short-lived session per operation on a blocking
+  worker (no polling, no IDLE); header-first reads; References-rooted
+  threads; local search over fetched headers; the only server mutation is
+  the `\Seen` flag when a thread is opened, gated by `mark_read_on_open`
+  (default true). Sends are `NotConfigured`. See
+  [ADR 0012](docs/decisions/0012-imap-provider.md).
+
 - **`herald ui`**: a loopback browser UI over the same CLI and approval queue.
   Per-run token, Origin check, CSP, no inline script, explicit endpoints, one
   command at a time. See [ADR 0010](docs/decisions/0010-local-web-ui.md).

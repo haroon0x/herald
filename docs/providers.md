@@ -37,6 +37,7 @@ change.
 | `maildir` | Local Maildir (`new/`, `cur/`) | SMTP submission plus a Sent copy | Implemented | Real mail that already syncs to disk |
 | `gmail` | None | None | Planned, enum only | Not available in v1 |
 | `x` | Mentions, DMs, feed, and notifications in a signed-in Chrome profile | Reply and DM (approval-gated) | Implemented, not yet live-canaried | X communication without opening x.com |
+| `imap` | Gmail IMAP inbox (app password, read-only) | None (mark-seen flag only) | Implemented, not yet live-verified | Mail that only lives in the cloud |
 
 `default_provider` in `config.toml` selects one. `herald ask --provider P`
 overrides it for a single command. `herald providers` prints the table above,
@@ -413,10 +414,47 @@ independently buildable.
 Post metrics are **not** implemented. The seven-method provider surface has no
 metrics operation, and adding one is a design change (see ADR 0008).
 
+## imap (read-only Gmail)
+
+The IMAP adapter is a deliberately small protocol client over the `imap`
+crate with TLS via rustls and webpki-roots; nothing from the `imap` crate's
+native-TLS feature is compiled. Each operation opens one short-lived session
+(connect, log in, select, fetch, log out) on a blocking worker with a 10 s
+connect timeout and a 30 s operation timeout. There is no polling, no IDLE,
+and no persistent connection.
+
+Reads are header-first: `list_recent` fetches headers and flags only
+(`BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REFERENCES FROM SUBJECT
+DATE)]`), so reading a listing never changes the server's `\Seen` bit. Bodies
+stay on the server until `get_thread`. Messages are threaded by the first
+normalized `References` id (or the message's own id); `get_thread` groups by
+that root within a bounded 500-header window, fetches matched bodies (bounded
+at 32 messages and 256 KB each), and — when `mark_read_on_open` is on — upgrades
+the session to a writable select and
+`STORE +FLAGS (\Seen)`. That flag write is the provider's only server
+mutation; it mirrors the X adapter's local seen-ledger ("opening a thread
+means seen"), is idempotent and config-gated (`mark_read_on_open = false`
+keeps reads side-effect free), and a failure logs a warning instead of
+failing the read. Fetching uses `PEEK` throughout, so the fetch itself never
+marks anything.
+
+Sending is not part of this provider: `prepare_reply` and `send_reply` are
+`NotConfigured`, and `find_sent` returns `Ok(None)` (no sends exist to
+reconcile). Search is local substring over sender, subject, and message id
+over fetched headers — IMAP `SEARCH` criteria were deliberately not used
+(the roadmap allowed "local filtering otherwise").
+
+Credentials follow the SMTP pattern: `password_env` names an environment
+variable, `doctor` warns on a plaintext `password`. Gmail app passwords
+only — the plain account password is refused by Gmail for IMAP; with 2-step
+verification off, an app password cannot be created and the failure surfaces
+as `NotAuthenticated` from `herald doctor`.
+
 ## gmail
 
 `gmail` is an enum variant marked planned. There is no adapter and no OAuth
-client. The CLI says so instead of pretending:
+client: the Gmail API provider is deliberately not this IMAP provider (which
+exists now; see the `imap` section above). The CLI says so instead of pretending:
 
 ```console
 $ herald ask "check my gmail" --provider gmail
@@ -427,9 +465,7 @@ execution: skipped — no gmail adapter in this build; plan only
 ```
 
 Plans still parse and validate, which keeps the enum and the eval set honest.
-Execution stops at the missing adapter and is audited as `deferred`. Gmail is
-planned for a later release as read-only IMAP using an app password, not OAuth;
-see [decisions/0004-email-provider-maildir-smtp.md](decisions/0004-email-provider-maildir-smtp.md).
+Execution stops at the missing adapter and is audited as `deferred`.
 
 ## Adding a provider
 
@@ -470,19 +506,19 @@ in `tests/`:
 
 ## Provider capability matrix
 
-| Capability | fake | maildir | x | gmail |
-| --- | --- | --- | --- | --- |
-| List recent | yes | yes | mentions + DMs | planned |
-| List unread | yes | yes | seen-ledger | planned |
-| Search | substring | substring | substring | planned |
-| Get thread | yes | yes | yes | planned |
-| Prepare reply | yes | yes | yes (checks composer) | planned |
-| Send reply | in-memory | SMTP | browser composer | no |
-| Verify send | in-thread | Sent folder | own-message body match | no |
-| Reconcile | in-thread | Sent folder | sent-ledger | no |
-| Mark as read | n/a | no, read-only | seen-ledger only | n/a |
-| Attachments | no | listed only | no | no |
-| Delete or archive | no | no | no | no |
+| Capability | fake | maildir | x | imap | gmail |
+| --- | --- | --- | --- | --- | --- |
+| List recent | yes | yes | mentions + DMs | header fetch, bounded | planned |
+| List unread | yes | yes | seen-ledger | `\Seen` flag filtered locally | planned |
+| Search | substring | substring | substring | substring over fetched headers | planned |
+| Get thread | yes | yes | yes | yes (References-rooted, bodies on demand) | planned |
+| Prepare reply | yes | yes | yes (checks composer) | not configured (read-only) | planned |
+| Send reply | in-memory | SMTP | browser composer | not configured (read-only) | no |
+| Verify send | in-thread | Sent folder | own-message body match | n/a | no |
+| Reconcile | in-thread | Sent folder | sent-ledger | n/a (no sends exist) | no |
+| Mark as read | n/a | no, read-only | seen-ledger only | `\Seen` STORE on open (config-gated) | n/a |
+| Attachments | no | listed only | no | listed only | no |
+| Delete or archive | no | no | no | no | no |
 ---
 
 [Herald README](../README.md) · [Security](../SECURITY.md) · [Contributing](../CONTRIBUTING.md) · [Privacy](../PRIVACY.md) · [Changelog](../CHANGELOG.md)

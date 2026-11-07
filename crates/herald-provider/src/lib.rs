@@ -4,6 +4,7 @@
 //! "click anything", "run JavaScript", or arbitrary page control to the planner.
 
 pub mod fake;
+pub mod imap;
 pub mod maildir;
 pub mod x;
 

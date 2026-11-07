@@ -99,10 +99,14 @@ These are requested and tracked, not shipped:
   patchelf`). Windows/macOS bundle icons are still missing.
 - **Post metrics.** Not implemented in Herald; the Zyquor pipeline owns posting performance.
 
-## v1.1: IMAP, read-only
+## v1.1: IMAP, read-only (implemented, not yet live-verified)
 
 The first post-v1 release adds a third real provider without adding send
-authority.
+authority. Implemented 2026-11-07: Gmail IMAP via app passwords, one
+short-lived session per command on a blocking worker, header-first reads,
+References-rooted threads, local search, and a config-gated `\Seen` flag
+write when a thread is opened. Sends stay `NotConfigured`. See
+[ADR 0012](decisions/0012-imap-provider.md).
 
 - IMAP read-only against Gmail and Outlook using app passwords, not OAuth.
 - Connection state machine: connect, authenticate, select, fetch, idle-free.
@@ -117,7 +121,10 @@ and the OAuth consent flow is a hosted-service problem. App passwords are
 worse for revocation and better for a first release. OAuth is a later ADR.
 
 Exit criteria: repeated scans report zero new items, a dropped connection fails
-closed, and the injection corpus passes against headers and bodies.
+closed, and the injection corpus passes against headers and bodies. The
+automated suite covers error mapping and config refusal without a network;
+the real round trip (`herald inbox --provider imap` against a live Gmail
+app-password account) is the owner's canary.
 
 ## v1.2: summaries and search
 

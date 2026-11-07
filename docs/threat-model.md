@@ -243,7 +243,34 @@ or an error message.
 
 **Test.** `flat_keys_never_expose_a_password`, `password_is_redacted_from_debug`
 in `herald-config/src/lib.rs`; `smtp_debug_redacts_the_password` in
-`herald-provider/src/maildir.rs`.
+`herald-provider/src/maildir.rs`; `imap_password_resolves_like_smtp` and
+`imap_username_requires_a_password_source` in `herald-config/src/model.rs`.
+
+### Silent mailbox mutation by IMAP
+
+**Path.** Reading mail unexpectedly marks it read (a `BODY[]` fetch without
+`PEEK` does this), or threads get grouped with the wrong messages.
+
+**Controls.** Every fetch uses `BODY.PEEK[...]`, so fetches never set the
+server's `\Seen` bit. The single deliberate `STORE +FLAGS (\Seen)` happens
+only when the user opens a thread, only under `mark_read_on_open` (default
+true, settable to false for side-effect-free reads), is best-effort (a
+failure logs and never fails the read), and is idempotent. The provider has
+no send or delete verb at any layer of the type system: `prepare_reply` and
+`send_reply` are `NotConfigured`. Threading is by first `References` id
+within a bounded 500-header window; a parent outside the window simply
+does not appear, rather than being guessed. Connection failures map to
+`Unavailable`, login failures to `NotAuthenticated`, and timeouts to
+`Timeout` — never to a fake success or to a retry loop.
+
+**Test.** `writes_are_refused_without_a_network_round_trip`,
+`missing_credentials_never_touch_the_network`, and
+`a_refused_connection_is_unavailable_not_a_crash` in
+`herald-provider/src/imap.rs`; config-side bounds in
+`herald-config/src/model.rs` (`imap_username_requires_a_password_source`,
+`imap_password_resolves_like_smtp`, `imap_env_overrides_apply`). Live
+verification against a real Gmail app password is the owner's canary; the
+automated suite is deliberately network-free.
 
 ### Malicious model artifact or binary
 
@@ -408,6 +435,10 @@ the data directory removes everything Herald keeps. See
 | UI server refuses unauthenticated requests end to end | `ui_server_requires_the_token_and_serves_authenticated_requests` | `apps/agent/tests/ui.rs` |
 | UI arguments are bounded | `inbox_arguments_are_bounded_and_known`, `history_arguments_are_bounded_and_known`, `ask_requires_an_instruction_and_maps_flags` | `apps/agent/src/ui.rs` |
 | Provider failures end `failed` | `send_without_smtp_is_not_configured_and_leaves_mailbox_untouched` | `herald-provider/src/maildir.rs` |
+| IMAP writes refused without a network round trip | `writes_are_refused_without_a_network_round_trip` | `herald-provider/src/imap.rs` |
+| IMAP refused connection is unavailable, never a crash | `a_refused_connection_is_unavailable_not_a_crash` | `herald-provider/src/imap.rs` |
+| IMAP thread roots are References-first | `thread_root_is_the_first_reference`, `a_reply_without_references_is_its_own_thread` | `herald-provider/src/imap.rs` |
+| IMAP account without a password source is refused at config load | `imap_username_requires_a_password_source` | `herald-config/src/model.rs` |
 | Drafts never send | Draft path returns a hash without a provider call; test pending | `apps/agent/src/send.rs` |
 | No duplicate on replay | `same_token_sends_only_once` | `herald-provider/src/fake.rs` |
 | Delivery recovered after a lost response | `fail_after_delivery_is_recovered_by_find_sent` | `herald-provider/src/fake.rs` |

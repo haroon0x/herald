@@ -159,6 +159,28 @@ configured `password_env` that is missing from the environment is an error at
 provider construction, and the Maildir falls back to read-only with a warning.
 It is never a silent unauthenticated send.
 
+### `[imap]`
+
+Read-only Gmail IMAP. App passwords only. See
+[providers.md](providers.md#imap-read-only-gmail) and
+[ADR 0012](decisions/0012-imap-provider.md).
+
+| Key | Type | Default | Example | Notes |
+| --- | --- | --- | --- | --- |
+| `host` | string | `"imap.gmail.com"` | `"imap.example.com"` | Hostname without spaces. |
+| `port` | integer | `993` | `143` | Must not be zero. With `use_tls = false` use the plain IMAP port. |
+| `username` | string | none | `"me@gmail.com"` | Login name. Requires `password` or `password_env`. |
+| `password` | string | none | (avoid) | Plaintext password. `doctor` warns; `init` never writes one. |
+| `password_env` | string | none | `"HERALD_IMAP_PASSWORD"` | Name of the environment variable holding the password. |
+| `folder` | string | `"INBOX"` | `"Archive"` | Mailbox to read. Gmail label names work as folder names. |
+| `use_tls` | boolean | `true` | `false` | Default on. Only disable for a local test server. |
+| `mark_read_on_open` | boolean | `true` | `false` | Opening a thread sets `\Seen` on the server. Set `false` for side-effect-free reads. |
+
+If `username` is set, one of `password` or `password_env` must be set. A
+configured `password_env` that is missing from the environment disables the
+provider with a warning at startup, like a mailbox without SMTP. It is never
+a silent unauthenticated login attempt.
+
 When `backend = "opencode"` and a managed GGUF is present, the GGUF is a
 lazy fallback: the sidecar starts only if the provider fails. The managed
 model is never started just to idle.
@@ -204,6 +226,12 @@ Overrides applied to the configuration:
 | --- | --- | --- |
 | `HERALD_PROVIDER` | `default_provider` | `maildir` |
 | `HERALD_ALLOW_SEND` | `policy.allow_send` | `true`, `1`, `yes`, `on` |
+| `HERALD_IMAP_HOST` | `imap.host` | `imap.gmail.com` |
+| `HERALD_IMAP_PORT` | `imap.port` | `993` |
+| `HERALD_IMAP_USERNAME` | `imap.username` | `me@gmail.com` |
+| `HERALD_IMAP_FOLDER` | `imap.folder` | `INBOX` |
+| `HERALD_IMAP_TLS` | `imap.use_tls` | `true` |
+| `HERALD_IMAP_MARK_READ_ON_OPEN` | `imap.mark_read_on_open` | `true` |
 | `HERALD_X_PROFILE_DIR` | `x.profile_dir` | `/home/you/.local/share/herald/profiles/x` |
 | `HERALD_X_HANDLE` | `x.handle` | `@you` |
 | `HERALD_X_HEADLESS` | `x.headless` | `true` |
@@ -405,6 +433,7 @@ there is no posting lane (ADR 0011).
 | SMTP host and port are set | Wrong host or port. |
 | SMTP password resolves | Auth would fail at the first send; the provider becomes read-only. |
 | Plaintext password in config | A warning to move it to the environment. |
+| IMAP host/port/folder | Shown when `[imap]` is configured; a live login + examine probe runs through the provider health check, so auth and connectivity problems fail the check with the server's reason. |
 | Model manifest and file | Download incomplete or manifest mismatch. |
 | `llama-server` binary found | The managed backend cannot start. |
 

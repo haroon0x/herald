@@ -61,6 +61,7 @@ posting lane and no auto-send. Nothing sends itself.
 | The state machine | `herald-core/src/state.rs` |
 | The provider trait and capability contract | `herald-provider/src/lib.rs` |
 | Maildir parsing, threading, Sent verification | `herald-provider/src/maildir.rs` |
+| IMAP reads (sessions, headers, flags, References threading) | `herald-provider/src/imap.rs` |
 | X parsing, selectors, ledgers, Chrome client | `herald-provider/src/x.rs` |
 | Approvals, reconciliation, execution | `apps/agent/src/send.rs` |
 | CLI command dispatch | `apps/agent/src/commands/mod.rs` |

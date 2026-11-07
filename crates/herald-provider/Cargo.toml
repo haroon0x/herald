@@ -20,6 +20,9 @@ lettre = { version = "0.11", default-features = false, features = [
     "rustls-tls",
     "pool",
 ] }
+imap = { version = "2", default-features = false }
+rustls = { version = "0.23", features = ["ring"] }
+webpki-roots = "1"
 chromiumoxide = "0.9.1"
 scraper = "0.29"
 tokio.workspace = true

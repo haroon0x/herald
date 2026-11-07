@@ -10,9 +10,8 @@ manual.
 
 Herald is a local-first communication agent. The model emits a typed
 `ActionPlan`; Rust validates, authorizes, resolves, and executes. Outbound
-actions happen only after a durable, human-verifiable approval — or, for
-original posts only, on the explicitly enabled autopost lane whose every rail
-must pass. Nothing else sends.
+actions exist only after a durable, human-verifiable approval — there is no
+posting lane and no auto-send. Nothing sends itself.
 
 ## Reading order for any task
 
@@ -33,7 +32,7 @@ must pass. Nothing else sends.
 
 | Path | Depends on | Responsibility |
 | --- | --- | --- |
-| `crates/herald-core/` | nothing in the workspace | Types of the action ladder (`ActionPlan` → `Action` → `Decision`), validation, policy/authorization, state machine, prompt construction, planner rules, quality scoring. **No I/O, ever.** |
+| `crates/herald-core/` | nothing in the workspace | Types of the action ladder (`ActionPlan` → `Action` → `Decision`), validation, policy/authorization, state machine, prompt construction, planner rules. **No I/O, ever.** |
 | `crates/herald-provider/` | core | `CommunicationProvider` capability trait, `fake` adapter, `maildir` adapter (+ SMTP), the X browser adapter. Provider-specific parsing stays inside each module. |
 | `crates/herald-storage/` | core | SQLite: schema migrations, message dedupe, action records, state-machine enforcement, audit log, pending approvals. |
 | `crates/herald-config/` | core | `config.toml` model, precedence (CLI > env > file > default), secrets redaction, path resolution. |
@@ -44,7 +43,7 @@ must pass. Nothing else sends.
 | Path | Purpose |
 | --- | --- |
 | `docs/` | Contracts, ADRs, threat model. Read before changing behaviour users rely on. |
-| `eval/commands.json` | The 45-case planner eval set. Changes to operation semantics change this file. |
+| `eval/commands.json` | The 42-case planner eval set. Changes to operation semantics change this file. |
 | `models/manifest.json` | Pinned model manifest (managed backend). |
 | `experiments/wsp/` | Concluded weight-space-programming pilot. Historical; not product code. |
 | `tests/` | Cross-crate fixtures. Provider contract tests live in `crates/herald-provider/tests/` and the CLI suite in `apps/agent/tests/`. |
@@ -55,9 +54,8 @@ must pass. Nothing else sends.
 | You want | It lives in |
 | --- | --- |
 | The operation enum, plan validation, body-hash | `herald-core/src/action.rs` |
-| Autopost rails and `authorize` | `herald-core/src/policy.rs` |
-| Autopost kill switch and budget, `x login` | `apps/agent/src/commands/autopost.rs`, `commands/x.rs` |
-| Deterministic quality scoring | `herald-core/src/quality.rs` |
+| `authorize` and approval policy | `herald-core/src/policy.rs` |
+| `x login` | `apps/agent/src/commands/x.rs` |
 | The deterministic planner (no model) | `herald-core/src/rules.rs` |
 | The state machine | `herald-core/src/state.rs` |
 | The provider trait and capability contract | `herald-provider/src/lib.rs` |
@@ -104,8 +102,7 @@ across a boundary marked with a newtype.
 | Unknown fields/enums fail plans closed | `ActionPlan` `deny_unknown_fields`; `action.rs` tests |
 | The body is never rewritten | `validate_plan`; `action.rs` body test |
 | Identifiers are never invented | `Target` kinds; resolution in `apps/agent/src/send.rs` |
-| Sends need approval; nothing auto-sends by default | `policy.rs`; `ask.rs` tests |
-| Autopost only for `create_post` with all rails | `policy.rs` autopost tests |
+| Sends need approval; nothing auto-sends | `policy.rs`; `ask.rs` tests |
 | `uncertain` is never blind-retried | `send.rs` reconcile; provider idempotency tests |
 | State machine rejects illegal transitions | `herald-storage` `transition_action` |
 | Message content is data, not instructions | prompt construction; injection corpus in evals |
@@ -153,11 +150,10 @@ sent-ledger pattern. Provider ships only when the safety tests pass against it.
 4. Classifier schema enum and prompt (if the model may emit it).
 5. Tests proving the invariant it relies on.
 
-### A policy gate (e.g. autopost rails)
+### A policy gate
 
-Core decides, CLI computes measured inputs (quota, quiet-hours, kill switch)
-and passes them in; core stays pure. Every rail fails closed and has a test
-proving it.
+Core decides, CLI supplies measured inputs; core stays pure. Every rail
+fails closed and has a test proving it.
 
 ### A CLI command
 

@@ -38,45 +38,6 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
             || lower.contains("summarise")
             || lower.contains("summarize"));
 
-    // X posts are their own operation with their own target. The timeline
-    // is not a conversation, so a post never resolves to a recipient.
-    let asks_for_post = starts_with_any(
-        &lower,
-        &[
-            "post exactly",
-            "post on x",
-            "post to x",
-            "post this on x",
-            "post this on my timeline",
-            "tweet this on x",
-            "post to my timeline",
-            "post on my timeline",
-            "post:",
-            "tweet exactly",
-            "tweet this",
-            "tweet:",
-            "post about",
-            "tweet about",
-            "write a post",
-            "write a tweet",
-            "share a post",
-        ],
-    );
-
-    if asks_for_post {
-        return match reply_body {
-            Some(body) => Some(ActionPlan {
-                provider,
-                operation: Operation::CreatePost,
-                target: Target::Timeline,
-                reply_body: Some(body),
-                needs_clarification: false,
-                clarification_question: None,
-            }),
-            None => Some(post_body_clarification(provider)),
-        };
-    }
-
     let outbound = !asks_for_summary
         && starts_with_any(
             &lower,
@@ -127,6 +88,29 @@ pub fn plan_offline(provider: ProviderId, instruction: &str) -> Option<ActionPla
 ///
 /// These are intentionally pattern-level, not an allow-list of test phrases.
 fn clarify_reason(lower: &str) -> Option<&'static str> {
+    if starts_with_any(
+        lower,
+        &[
+            "tweet",
+            "post on x",
+            "post to x",
+            "post this on x",
+            "post to my timeline",
+            "post on my timeline",
+            "post exactly",
+            "post:",
+            "post about",
+            "write a tweet",
+            "write a post",
+            "share a post",
+        ],
+    ) {
+        return Some(
+            "Herald does not post to social networks. Nothing was posted. \\
+             It reads and replies to your messages instead.",
+        );
+    }
+
     if starts_with_any(
         lower,
         &[
@@ -193,15 +177,6 @@ fn clarify_reason(lower: &str) -> Option<&'static str> {
     }
 
     None
-}
-
-fn post_body_clarification(provider: ProviderId) -> ActionPlan {
-    clarification_plan(
-        provider,
-        Target::Timeline,
-        Operation::CreatePost,
-        "What should the post say?",
-    )
 }
 
 fn reply_body_clarification(provider: ProviderId, target: Target, lower: &str) -> ActionPlan {
@@ -512,53 +487,36 @@ mod tests {
     }
 
     #[test]
+    fn posting_requests_get_an_honest_decline() {
+        // Herald has no posting operation. A post/tweet request is answered
+        // with a deterministic clarification that says so — it is never
+        // routed to a reply, a send, or the model.
+        for instruction in [
+            "Post exactly: \"hello\"",
+            "tweet exactly: \"hello\"",
+            "Post on X: Herald now reads mentions and DMs.",
+            "Tweet about the launch",
+            "Write a tweet about the new build",
+            "post: hello",
+        ] {
+            let plan = plan_offline(ProviderId::X, instruction)
+                .unwrap_or_else(|| panic!("expected a clarification for {instruction:?}"));
+            assert!(plan.needs_clarification, "{instruction}");
+            assert_eq!(plan.operation, Operation::ListUnreadMessages);
+            assert!(
+                plan.clarification_question
+                    .as_deref()
+                    .is_some_and(|q| q.contains("does not post")),
+                "{instruction}"
+            );
+        }
+    }
+
+    #[test]
     fn whole_words_only_do_not_match_inside_other_words() {
         let archived = plan_offline(ProviderId::Gmail, "Archive the newsletter.")
             .expect("archive is a clarification, not a silent decline");
         assert!(archived.needs_clarification);
         assert!(plan_offline(ProviderId::Gmail, "Checkout the branch.").is_none());
-    }
-
-    #[test]
-    fn post_exactly_is_a_timeline_post() {
-        let plan =
-            plan(r#"Post exactly: "we shipped the parser today because CI was the bottleneck.""#);
-        assert_eq!(plan.operation, Operation::CreatePost);
-        assert_eq!(plan.target, Target::Timeline);
-        assert_eq!(
-            plan.reply_body.as_deref(),
-            Some("we shipped the parser today because CI was the bottleneck.")
-        );
-        assert!(validate_plan(plan).is_ok());
-    }
-
-    #[test]
-    fn tweet_prefix_is_a_timeline_post() {
-        let plan = plan(r#"tweet exactly: "hello from herald""#);
-        assert_eq!(plan.operation, Operation::CreatePost);
-        assert_eq!(plan.target, Target::Timeline);
-    }
-
-    #[test]
-    fn a_topic_only_post_is_still_a_timeline_clarification() {
-        for instruction in [
-            "Tweet about the local-first release.",
-            "Post about the launch.",
-            "write a tweet about the new build",
-        ] {
-            let plan = plan_offline(ProviderId::X, instruction).expect("a post plan");
-            assert!(plan.needs_clarification, "{instruction}");
-            assert_eq!(plan.target, Target::Timeline);
-        }
-    }
-
-    #[test]
-    fn post_without_body_asks_instead_of_guessing() {
-        let plan = plan_offline(ProviderId::X, "Post exactly:").expect("a clarification plan");
-        assert!(plan.needs_clarification);
-        assert!(matches!(
-            validate_plan(plan),
-            Err(crate::error::PlanError::ClarificationRequired(_))
-        ));
     }
 }

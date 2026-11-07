@@ -2,11 +2,15 @@
 
 Date: 2026-11-04
 Status: Accepted
+Amended: [0011](0011-no-posting-lane.md) removed original-post creation; the
+adapter is now a communications channel only (mentions, DMs, feed,
+notifications, approval-gated replies and DMs).
 
 ## Context
 
 Herald's owner uses X daily but wants to stop opening x.com: read mentions and
-DMs, reply, send DMs, and post original updates. [ADR 0007](0007-browser-automation.md)
+DMs, reply, and send DMs. Original-post creation was initially included here
+and later removed by [ADR 0011](0011-no-posting-lane.md). [ADR 0007](0007-browser-automation.md)
 recorded the conditions under which browser automation would be acceptable and
 recommended against shipping it for mail. Mail still uses Maildir and SMTP.
 
@@ -38,8 +42,9 @@ Protocol) against a **dedicated profile** at `<data-dir>/profiles/x`.
 2. **The capability surface is unchanged.** Only the seven trait methods
    exist. Selectors and URLs are module constants; the planner cannot name a
    selector, a URL, a script, or a "click anything" operation. Thread ids are
-   validated (`mention:<digits>`, `dm:<safe id>`, `timeline`) before any
-   navigation, so page content can never steer one.
+   validated (`mention:<digits>`, `dm:<safe id>`) before any
+   navigation, so page content can never steer one. The former `timeline`
+   thread id is rejected (ADR 0011).
 3. **Page text is untrusted.** Parsed tweets and DMs become
    `Untrusted<String>` bodies. Injection fixtures prove that instructions in a
    message do not change a selector, a URL, or a capability.
@@ -57,10 +62,9 @@ Protocol) against a **dedicated profile** at `<data-dir>/profiles/x`.
 6. **Unread is local.** X exposes no reliable server-side unread state in the
    DOM, so unread comes from a bounded seen-ledger
    (`<data-dir>/x-seen.json`), not from scraping a badge.
-7. **Threads are three namespaces.** `mention:<tweet_id>` is a public
-   conversation, `dm:<conversation_id>` is a private conversation, and
-   `timeline` is the compose surface. `timeline` identifies no recipient and is
-   valid only for posts.
+7. **Threads are two namespaces.** `mention:<tweet_id>` is a public
+   conversation and `dm:<conversation_id>` is a private conversation. There is
+   no timeline/compose thread (ADR 0011).
 
 Post metrics are **not** part of this milestone. The seven-method surface has
 no metrics operation, and adding one is a capability change that needs its own

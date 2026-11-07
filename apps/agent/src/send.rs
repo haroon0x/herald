@@ -237,7 +237,14 @@ pub async fn resolve_thread(
                     )
                 })
         }
-        Target::Timeline => Ok(ThreadId::new("timeline")),
+        Target::Timeline => {
+            // The timeline target survives only so legacy approvals decode.
+            // Every path that acts on it fails closed.
+            Err(AppError::new(
+                "invalid_state",
+                "the timeline target was removed; nothing was sent",
+            ))
+        }
         Target::Description { description } => {
             let query = MessageQuery {
                 search: Some(search_terms(target)),
@@ -286,7 +293,9 @@ fn search_terms(target: &Target) -> String {
         Target::Description { description } => strip_search_prefix(description),
         Target::LatestFrom { sender } => sender.clone(),
         Target::Thread { thread_id } => thread_id.as_str().to_string(),
-        Target::Timeline => "timeline".to_string(),
+        // validate_plan refuses the timeline target, so no read can reach
+        // here; an empty filter would match everything, so refuse to guess.
+        Target::Timeline => String::new(),
     }
 }
 
@@ -397,10 +406,8 @@ pub fn operation_name(action: &Action) -> &'static str {
             ReadOperation::SummarizeThread => "summarize_thread",
         },
         Action::Draft(_) => "prepare_reply",
-        Action::Send(send) => match send.target {
-            Target::Timeline => "create_post",
-            _ => "send_reply",
-        },
+        // The timeline target is unreachable after validation.
+        Action::Send(_) => "send_reply",
     }
 }
 
@@ -609,65 +616,11 @@ pub async fn approve(app: &App, action_id: &str) -> Result<SendOutcome, AppError
         &resolved,
         &approval.body,
         &approval.body_hash,
-        "",
-    )
-    .await
-}
-
-/// Execute a post on the autopost lane.
-///
-/// This is reachable only from `Decision::Allowed`, which core grants only when
-/// every autopost rail passed. It reuses the same prepare/send/verify path and
-/// state machine as an approved send; there is no shortcut around verification.
-pub async fn execute_autopost_send(
-    app: &App,
-    action: &SendAction,
-    action_id: &str,
-) -> Result<SendOutcome, AppError> {
-    if !matches!(action.target, Target::Timeline) {
-        return Err(AppError::new(
-            "internal",
-            "the autopost lane only exists for timeline posts",
-        ));
-    }
-
-    let provider = app.registry.get(action.provider).ok_or_else(|| {
-        AppError::new(
-            "no_adapter",
-            format!(
-                "no {} adapter is implemented in this build",
-                action.provider
-            ),
-        )
-    })?;
-
-    let thread = ThreadId::new("timeline");
-    record_action(app, &Action::Send(action.clone()), action_id, Some(&thread))?;
-    app.store
-        .transition_action(action_id, ActionState::Executing)?;
-    audit(
-        app,
-        Some(action_id),
-        "autopost",
-        format!("executing autonomous post {}", action.body_hash),
-    )?;
-
-    prepare_and_send(
-        app,
-        provider.as_ref(),
-        action_id,
-        &thread,
-        &action.body,
-        &action.body_hash,
-        "autopost",
     )
     .await
 }
 
 /// The one path from a prepared action to a verified receipt.
-///
-/// `lane` is empty for an approved send and `autopost` for the autonomous lane;
-/// it only prefixes audit details, never changes behaviour.
 async fn prepare_and_send(
     app: &App,
     provider: &dyn CommunicationProvider,
@@ -675,21 +628,14 @@ async fn prepare_and_send(
     thread: &ThreadId,
     body: &str,
     expected_hash: &str,
-    lane: &str,
 ) -> Result<SendOutcome, AppError> {
-    let prefix = if lane.is_empty() {
-        String::new()
-    } else {
-        format!("{lane}: ")
-    };
-
     let prepared = match provider.prepare_reply(thread, body, action_id).await {
         Ok(prepared) => prepared,
         Err(error) => {
             app.store
                 .transition_action(action_id, ActionState::Failed)?;
             app.store.delete_approval(action_id)?;
-            audit(app, Some(action_id), "failed", format!("{prefix}{error}"))?;
+            audit(app, Some(action_id), "failed", error.to_string())?;
             return Err(error.into());
         }
     };
@@ -703,7 +649,7 @@ async fn prepare_and_send(
             app,
             Some(action_id),
             "body_changed",
-            format!("{prefix}provider changed the body; nothing was sent"),
+            "provider changed the body; nothing was sent".to_string(),
         )?;
         return Err(AppError::conflict(
             "the provider changed the body; nothing was sent",
@@ -711,7 +657,7 @@ async fn prepare_and_send(
     }
 
     match provider.send_reply(&prepared).await {
-        Ok(receipt) => finish_send(app, action_id, &receipt, &prefix),
+        Ok(receipt) => finish_send(app, action_id, &receipt),
         Err(ProviderError::Timeout) => {
             app.store
                 .transition_action(action_id, ActionState::Uncertain)?;
@@ -720,7 +666,7 @@ async fn prepare_and_send(
                 app,
                 Some(action_id),
                 "uncertain",
-                format!("{prefix}delivery timed out; reconcile before doing anything else"),
+                "delivery timed out; reconcile before doing anything else".to_string(),
             )?;
             Ok(SendOutcome {
                 status: "uncertain",
@@ -733,7 +679,7 @@ async fn prepare_and_send(
             app.store
                 .transition_action(action_id, ActionState::Failed)?;
             app.store.delete_approval(action_id)?;
-            audit(app, Some(action_id), "failed", format!("{prefix}{error}"))?;
+            audit(app, Some(action_id), "failed", error.to_string())?;
             Err(error.into())
         }
     }
@@ -743,7 +689,6 @@ fn finish_send(
     app: &App,
     action_id: &str,
     receipt: &ExecutionReceipt,
-    prefix: &str,
 ) -> Result<SendOutcome, AppError> {
     if receipt.verified {
         app.store
@@ -754,7 +699,7 @@ fn finish_send(
             Some(action_id),
             "succeeded",
             format!(
-                "{prefix}sent message {} to thread {}",
+                "sent message {} to thread {}",
                 receipt.provider_message_id, receipt.thread_id
             ),
         )?;
@@ -772,7 +717,7 @@ fn finish_send(
             app,
             Some(action_id),
             "uncertain",
-            format!("{prefix}delivered but not confirmed locally; reconcile before retrying"),
+            "delivered but not confirmed locally; reconcile before retrying".to_string(),
         )?;
         Ok(SendOutcome {
             status: "uncertain",

@@ -2,7 +2,6 @@
 
 pub mod approvals;
 pub mod ask;
-pub mod autopost;
 pub mod config;
 pub mod doctor;
 pub mod eval;
@@ -15,8 +14,7 @@ pub mod x;
 
 use std::sync::Arc;
 
-use herald_config::quiet_hours_active;
-use herald_core::{PolicyConfig, ProviderId, time::now_ms};
+use herald_core::{PolicyConfig, ProviderId};
 use herald_provider::CommunicationProvider;
 
 use crate::app::App;
@@ -79,7 +77,6 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
         Command::X { action } => match action {
             XAction::Login => x::login(app).await,
         },
-        Command::Autopost { action } => autopost::run(app, action),
         Command::Config { action } => dispatch_config(app, action),
         Command::Model { action } => dispatch_model(app, action).await,
         Command::Eval {
@@ -151,66 +148,10 @@ pub fn action_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// The kill switch written by `herald autopost off`.
-pub const AUTOPOST_KILL_SWITCH: &str = "autopost.disabled";
-
-/// Compute the policy view, including the rails only the process can measure.
-///
-/// Quiet hours, the daily budget, and the kill switch are measured here and
-/// passed in; core stays pure. Every unknown fails closed: an unreadable
-/// budget or kill-switch error disables the lane.
+/// The policy view for this run. `enable_send` can only widen a `false`
+/// `allow_send`, never narrow one the user set in the file.
 pub fn policy(app: &App, enable_send: bool) -> PolicyConfig {
     let mut policy = app.config.policy();
     policy.allow_send = policy.allow_send || enable_send;
-
-    let now = now_ms();
-    policy.autopost.quiet_now = app
-        .config
-        .policy
-        .autopost_quiet_hours
-        .as_deref()
-        .is_some_and(|hours| quiet_hours_active(hours, minutes_of_day_utc(now)));
-    policy.autopost.remaining_today = autopost_remaining(app, now);
-    if app.data_dir.join(AUTOPOST_KILL_SWITCH).exists() {
-        policy.autopost.enabled = false;
-    }
     policy
-}
-
-/// Posts left in today's UTC budget. A storage error yields zero, not a guess.
-#[must_use]
-pub fn autopost_remaining(app: &App, now: i64) -> u32 {
-    let limit = app.config.policy.autopost_daily_limit;
-    let used = app
-        .store
-        .count_actions_by_operation_since("create_post", day_start_ms(now))
-        .unwrap_or(limit);
-    limit.saturating_sub(used)
-}
-
-/// Whole minutes since midnight UTC.
-#[must_use]
-pub fn minutes_of_day_utc(now_ms: i64) -> i64 {
-    now_ms.div_euclid(60_000).rem_euclid(1_440)
-}
-
-/// Midnight UTC of the day containing `now_ms`.
-#[must_use]
-pub fn day_start_ms(now_ms: i64) -> i64 {
-    now_ms.div_euclid(86_400_000) * 86_400_000
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn utc_day_helpers_are_utc_not_local() {
-        // 2026-11-04T10:00:00Z
-        let now = 1_793_786_400_000;
-        assert_eq!(minutes_of_day_utc(now), 600);
-        assert_eq!(day_start_ms(now), 1_793_750_400_000);
-        assert_eq!(minutes_of_day_utc(day_start_ms(now)), 0);
-        assert_eq!(day_start_ms(day_start_ms(now)), day_start_ms(now));
-    }
 }

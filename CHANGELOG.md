@@ -12,37 +12,22 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 ### Added
 
-- **`herald ask --body-env <VAR>`** and a **Compose** button in `herald ui`: the exact post body travels via the environment (never argv), the UI queues an approval through `POST /api/post` (`ask "post exactly:" --enable-send`), and nothing is sent without `herald approve`.
-
-- The configured inference backend (managed llama-server, an OpenAI-compatible
-  local endpoint, or the opencode pool) now drafts original posts from a topic:
-  `tweet about the local-first release`. The classifier can select
-  `create_post`; the target is always the timeline; drafts are capped at 280
-  characters and still pass approval or the autopost rails.
-
 - **`herald ui`**: a loopback browser UI over the same CLI and approval queue.
   Per-run token, Origin check, CSP, no inline script, explicit endpoints, one
   command at a time. See [ADR 0010](docs/decisions/0010-local-web-ui.md).
 - **`herald ui --open`** opens the printed URL via `xdg-open`, and the server writes the URL to `<data-dir>/ui-url` (mode `0600`, atomic) so a systemd user service can serve it (`contrib/systemd/herald-ui.service`); see [contrib/README.md](contrib/README.md).
 
-- **X provider** (`x`): reads mentions and DMs, replies, sends DMs, and creates
-  original posts through a dedicated Chrome profile driven by `chromiumoxide`.
-  Constant selectors only, thread-id validation before navigation, a bounded
-  seen ledger for unread, a sent ledger for idempotency, verified sends by exact
-  body match, and hard stops on login challenges, captchas, account warnings,
-  rate limits, and unexpected DOM. See
+- **X provider** (`x`): reads mentions, DMs, the home feed, and notifications,
+  and sends approval-gated replies/DMs through a dedicated Chrome profile
+  driven by `chromiumoxide`. Constant selectors only, thread-id validation
+  before navigation, a bounded seen ledger for unread, a sent ledger for
+  idempotency, verified sends by exact body match, and hard stops on login
+  challenges, captchas, account warnings, rate limits, and unexpected DOM. See
   [ADR 0008](docs/decisions/0008-x-browser-adapter.md).
-- **Scoped autopost** for original timeline posts only: requires both
-  `allow_send` and `allow_autopost`, a clear kill-switch file, UTC quiet hours,
-  a daily UTC cap counting manual and autonomous posts, and a deterministic
-  quality floor. Any failing rail falls back to the approval queue. See
-  [ADR 0009](docs/decisions/0009-scoped-autopost.md).
-- **`herald autopost status|on|off`** and **`herald x login`** (visible window,
-  human sign-in, no cookie or credential access).
+- **`herald x login`** (visible window, human sign-in, no cookie or credential
+  access).
 - **`opencode` inference backend** (`opencode run --standalone`, one-shot,
   never `--auto`) with a `doctor` version probe.
-- **`create_post` operation** with timeline target, deterministic post phrases,
-  policy rails, and three eval cases (45 total).
 - **Target and question in the classifier** (model ladder 2/10): the grammar now
   carries `target` and `question` alongside the flag and operation, so the model
   can phrase what a request is about without ever naming an identifier. An empty
@@ -51,6 +36,14 @@ not as released behaviour until the canary in the milestone handoff passes.
   are unchanged.
 
 ### Changed
+
+- Herald has no posting lane and no auto-send. `create_post`, the autopost
+  policy rails, the tweet quality scorer, post drafting, `herald autopost`,
+  the UI compose panel, and `/api/post` + `/api/autopost` are removed. Tweet
+  or post requests get a deterministic decline. The legacy `Target::Timeline`
+  variant survives only so old queued approvals can be listed and rejected;
+  `validate_plan` refuses it and nothing is ever sent to it. See
+  [ADR 0011](docs/decisions/0011-no-posting-lane.md).
 
 - Notifications are unread on the check that finds them, then read on the next;
   writes clear the UI read cache. DMs are out of scope in the UI.
@@ -62,8 +55,7 @@ not as released behaviour until the canary in the milestone handoff passes.
   header shows when the scope was checked, and Refresh is the explicit check.
   Browser runs are headless again.
 - The `opencode` backend is the primary inference path; the managed GGUF is a
-  lazy fallback, and a fallback answer disables autopost for that run. Fixed
-  `[model] backend = "opencode"` parsing.
+  lazy fallback. Fixed `[model] backend = "opencode"` parsing.
 
 - `herald ui` gets a warmer, denser layout, a client-side filter, keyboard
   navigation (`j`/`k`, `Enter`, `/`, `r`, `q`, `h`), and opens the queue on load
@@ -73,10 +65,9 @@ not as released behaviour until the canary in the milestone handoff passes.
 
 - `herald ui` uses a quieter neutral interface: system sans, white surfaces, one
   teal accent, no textures or newspaper rules. Selected threads highlight one
-  item, action states are colour-coded, and the autopost copy is plain English.
+  item, action states are colour-coded, and the UI copy is plain English.
 - `herald ui` flushes its startup URL so scripts and tests can read it; an
-  end-to-end test now starts the real server and checks the token, 403, CSP,
-  and the autopost kill switch.
+  end-to-end test now starts the real server and checks the token and 403.
 - X writes are paced at least 60 seconds apart, capped at 6/hour and 20/UTC-day
   from the sent-ledger, and identical text is refused for 24 hours. A
   `profile_dir` that looks like a shared browser profile is refused before
@@ -97,7 +88,7 @@ reads likes, reposts, follows, and system notices. The DM
   guessing. Home feed, richer notifications, and a GUI are on the roadmap.
 - `ProviderId::X` is now implemented. `herald providers` performs a real
   browser health check for `x` when `[x]` is configured.
-- Eval set grows from 42 to 45 cases; the rules engine scores 45/45.
+- Eval set is 42 cases; the rules engine scores 42/42.
 
 ### Fixed
 
@@ -112,8 +103,8 @@ reads likes, reposts, follows, and system notices. The DM
 ### Not included
 
 - Post metrics, scheduling, threads, likes, follows, and delete. Metrics in
-  particular need a new operation and an ADR; the seven-method provider surface
-  is unchanged.
+  particular belong to Zyquor's posting pipeline; the seven-method provider
+  surface is unchanged.
 
 ## [1.0.0] - 2026-11-04
 

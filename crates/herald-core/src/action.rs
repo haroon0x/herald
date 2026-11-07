@@ -45,7 +45,6 @@ pub enum Operation {
     SummarizeThread,
     PrepareReply,
     SendReply,
-    CreatePost,
 }
 
 impl Operation {
@@ -59,21 +58,17 @@ impl Operation {
             Self::SummarizeThread => "summarize_thread",
             Self::PrepareReply => "prepare_reply",
             Self::SendReply => "send_reply",
-            Self::CreatePost => "create_post",
         }
     }
 
     #[must_use]
     pub const fn is_outbound(self) -> bool {
-        matches!(self, Self::SendReply | Self::CreatePost)
+        matches!(self, Self::SendReply)
     }
 
     #[must_use]
     pub const fn needs_body(self) -> bool {
-        matches!(
-            self,
-            Self::PrepareReply | Self::SendReply | Self::CreatePost
-        )
+        matches!(self, Self::PrepareReply | Self::SendReply)
     }
 }
 
@@ -90,8 +85,10 @@ pub enum Target {
     Thread { thread_id: ThreadId },
     /// The latest message from `sender`, resolved by Rust.
     LatestFrom { sender: String },
-    /// The user's own X timeline. Valid only for `create_post`; it is not a
-    /// conversation and it never identifies a recipient.
+    /// The user's own X timeline. Legacy: only the removed `create_post`
+    /// operation produced it. The variant stays so approvals queued before
+    /// the posting lane was removed still decode in the queue; every path
+    /// that acts on it fails closed and nothing is ever sent to it.
     Timeline,
 }
 
@@ -102,7 +99,8 @@ impl Target {
             Self::Description { description } => description.clone(),
             Self::Thread { thread_id } => format!("thread {thread_id}"),
             Self::LatestFrom { sender } => format!("latest message from {sender}"),
-            Self::Timeline => "your timeline".to_string(),
+            // Legacy queue entries stay readable; acting on them fails closed.
+            Self::Timeline => "your timeline (removed)".to_string(),
         }
     }
 }
@@ -200,6 +198,14 @@ pub fn validate_plan(plan: ActionPlan) -> Result<Action, PlanError> {
 
     validate_target(&plan.target)?;
 
+    if matches!(plan.target, Target::Timeline) {
+        // The timeline target only exists so legacy approvals can decode.
+        // No operation may act on it.
+        return Err(PlanError::InvalidPlan(
+            "the timeline target was removed; Herald has no posting operation".to_string(),
+        ));
+    }
+
     match plan.operation {
         Operation::PrepareReply => {
             let body = require_body(plan.reply_body, plan.operation)?;
@@ -209,7 +215,7 @@ pub fn validate_plan(plan: ActionPlan) -> Result<Action, PlanError> {
                 body,
             }))
         }
-        Operation::SendReply | Operation::CreatePost => {
+        Operation::SendReply => {
             let body = require_body(plan.reply_body, plan.operation)?;
             let body_hash = body_hash(&body);
             Ok(Action::Send(SendAction {
@@ -234,9 +240,9 @@ fn read_operation(operation: Operation) -> Result<ReadOperation, PlanError> {
         Operation::GetThread => Ok(ReadOperation::GetThread),
         Operation::SearchMessages => Ok(ReadOperation::SearchMessages),
         Operation::SummarizeThread => Ok(ReadOperation::SummarizeThread),
-        Operation::PrepareReply | Operation::SendReply | Operation::CreatePost => Err(
-            PlanError::InvalidPlan("reply operation is not a read action".to_string()),
-        ),
+        Operation::PrepareReply | Operation::SendReply => Err(PlanError::InvalidPlan(
+            "reply operation is not a read action".to_string(),
+        )),
     }
 }
 
@@ -372,6 +378,34 @@ mod tests {
         match validate_plan(plan) {
             Err(PlanError::ClarificationRequired(question)) => assert_eq!(question, "Which Sam?"),
             other => panic!("expected clarification, got {other:?}"),
+        }
+    }
+
+    /// The timeline target exists only so legacy approvals can decode. No
+    /// plan may validate into an action against it, whatever the operation.
+    #[test]
+    fn timeline_target_is_refused_for_every_operation() {
+        for operation in [
+            "list_recent_messages",
+            "list_unread_messages",
+            "get_thread",
+            "search_messages",
+            "summarize_thread",
+            "prepare_reply",
+            "send_reply",
+        ] {
+            let plan = parse(&format!(
+                r#"{{
+                    "provider": "x",
+                    "operation": "{operation}",
+                    "target": {{"kind": "timeline"}},
+                    "reply_body": "hello"
+                }}"#
+            ));
+            assert!(
+                matches!(validate_plan(plan), Err(PlanError::InvalidPlan(_))),
+                "{operation} must refuse the timeline target"
+            );
         }
     }
 

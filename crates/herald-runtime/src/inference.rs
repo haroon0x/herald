@@ -41,12 +41,6 @@ pub trait Inference: Send + Sync + std::fmt::Debug {
         user: &str,
         max_tokens: u16,
     ) -> Result<String, RuntimeError>;
-
-    /// True when this answer came from a weaker fallback backend. Callers use
-    /// it to keep higher-risk paths (autopost) closed.
-    fn used_fallback(&self) -> bool {
-        false
-    }
 }
 
 #[async_trait]
@@ -74,25 +68,17 @@ impl Inference for LlamaSidecar {
 /// Primary backend plus a lazily started local GGUF fallback.
 ///
 /// The fallback sidecar starts only when the primary fails, so a normal run
-/// never pays the memory cost. Once it has answered, [`Inference::used_fallback`]
-/// is true for the rest of the process.
+/// never pays the memory cost.
 pub struct FallbackInference {
     primary: Box<dyn Inference>,
     fallback_config: crate::SidecarConfig,
     fallback: tokio::sync::OnceCell<LlamaSidecar>,
-    used_fallback: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for FallbackInference {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("FallbackInference")
-            .field(
-                "used_fallback",
-                &self
-                    .used_fallback
-                    .load(std::sync::atomic::Ordering::Relaxed),
-            )
             .finish_non_exhaustive()
     }
 }
@@ -104,18 +90,13 @@ impl FallbackInference {
             primary,
             fallback_config,
             fallback: tokio::sync::OnceCell::new(),
-            used_fallback: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     async fn fallback(&self) -> Result<&LlamaSidecar, RuntimeError> {
-        let sidecar = self
-            .fallback
+        self.fallback
             .get_or_try_init(|| async { LlamaSidecar::start(&self.fallback_config).await })
-            .await?;
-        self.used_fallback
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        Ok(sidecar)
+            .await
     }
 }
 
@@ -160,11 +141,6 @@ impl Inference for FallbackInference {
                     .await
             }
         }
-    }
-
-    fn used_fallback(&self) -> bool {
-        self.used_fallback
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

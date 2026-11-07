@@ -528,30 +528,7 @@ fn an_expired_approval_is_cancelled_not_left_pending() {
 }
 
 #[test]
-fn autopost_kill_switch_is_a_file_and_status_fails_closed() {
-    let env = Env::new();
-
-    let (status, output) = env.json(&["autopost", "status"], &[]);
-    assert!(output.status.success());
-    assert_eq!(data(&status)["status"], "approval_only");
-    assert_eq!(data(&status)["kill_switch"], false);
-
-    let (off, output) = env.json(&["autopost", "off"], &[]);
-    assert!(output.status.success());
-    assert_eq!(data(&off)["kill_switch"], true);
-    assert!(env.data.join("autopost.disabled").exists());
-
-    let (status, _) = env.json(&["autopost", "status"], &[]);
-    assert_eq!(data(&status)["kill_switch"], true);
-    assert_eq!(data(&status)["status"], "approval_only");
-
-    let (on, _) = env.json(&["autopost", "on"], &[]);
-    assert_eq!(data(&on)["kill_switch"], false);
-    assert!(!env.data.join("autopost.disabled").exists());
-}
-
-#[test]
-fn a_post_without_the_autopost_lane_still_queues_an_approval() {
+fn posting_requests_are_declined_and_nothing_is_queued() {
     let env = Env::new();
     let mut config = std::fs::read_to_string(&env.config).unwrap();
     config.push_str("\n[x]\nhandle = \"@me\"\nheadless = true\n");
@@ -570,12 +547,19 @@ fn a_post_without_the_autopost_lane_still_queues_an_approval() {
         &[],
     );
     assert!(output.status.success());
-    assert_eq!(data(&ask)["status"], "awaiting_approval");
-    assert_eq!(data(&ask)["operation"], "create_post");
-    assert_eq!(data(&ask)["thread_id"], "timeline");
+    assert_eq!(data(&ask)["status"], "clarification_required");
+    assert!(
+        data(&ask)["question"]
+            .as_str()
+            .is_some_and(|question| question.contains("does not post"))
+    );
+
+    let (approvals, output) = env.json(&["approvals"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&approvals)["count"], 0);
     assert!(
         !env.data.join("x-sent.json").exists(),
-        "nothing may be posted while the lane is off"
+        "nothing may be posted; Herald has no posting operation"
     );
 }
 
@@ -588,7 +572,7 @@ fn x_login_requires_an_x_section_and_never_launches_blindly() {
 }
 
 #[test]
-fn a_topic_only_post_without_a_model_asks_for_the_text() {
+fn posting_requests_get_an_honest_decline() {
     let env = Env::new();
     let (ask, output) = env.json(
         &["ask", "Tweet about the launch.", "--engine", "rules"],
@@ -596,7 +580,11 @@ fn a_topic_only_post_without_a_model_asks_for_the_text() {
     );
     assert!(output.status.success());
     assert_eq!(data(&ask)["status"], "clarification_required");
-    assert_eq!(data(&ask)["question"], "What should the post say?");
+    assert!(
+        data(&ask)["question"]
+            .as_str()
+            .is_some_and(|question| question.contains("does not post"))
+    );
 }
 
 #[test]
@@ -607,7 +595,7 @@ fn ask_with_body_env_queues_the_exact_body_and_sends_nothing() {
     let (queued, output) = env.json(
         &[
             "ask",
-            "post exactly:",
+            "Send exactly: to the founder",
             "--provider",
             "fake",
             "--body-env",
@@ -618,9 +606,8 @@ fn ask_with_body_env_queues_the_exact_body_and_sends_nothing() {
     );
     assert!(output.status.success());
     assert_eq!(data(&queued)["status"], "awaiting_approval");
-    assert_eq!(data(&queued)["operation"], "create_post");
+    assert_eq!(data(&queued)["operation"], "send_reply");
     assert_eq!(data(&queued)["body"], body);
-    assert_eq!(data(&queued)["thread_id"], "timeline");
 
     // The approval is queued, nothing has been sent.
     let (approvals, output) = env.json(&["approvals"], &[]);
@@ -640,7 +627,7 @@ fn ask_with_body_env_rejects_an_empty_variable() {
     let (missing, output) = env.json(
         &[
             "ask",
-            "post exactly:",
+            "Send exactly: to the founder",
             "--provider",
             "fake",
             "--body-env",
@@ -655,7 +642,7 @@ fn ask_with_body_env_rejects_an_empty_variable() {
     let (empty, output) = env.json(
         &[
             "ask",
-            "post exactly:",
+            "Send exactly: to the founder",
             "--provider",
             "fake",
             "--body-env",

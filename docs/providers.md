@@ -2,9 +2,9 @@
 
 A provider is an adapter between Herald's typed actions and one place where
 messages live. v1 ships three: `fake` for demos, tests, and evals, `maildir`
-for real local mail, and `x` for mentions, DMs, replies, and original posts
-through a dedicated browser profile. `gmail` exists as an enum variant and is
-explicitly not implemented.
+for real local mail, and `x` for mentions, DMs, the home feed, notifications,
+and approval-gated replies/DMs through a dedicated browser profile. `gmail`
+exists as an enum variant and is explicitly not implemented.
 
 Every provider implements the same capability port:
 
@@ -36,7 +36,7 @@ change.
 | `fake` | Seeded in-memory inbox | In-memory send, verified | Implemented | Demos, tests, evals, trying the approval flow |
 | `maildir` | Local Maildir (`new/`, `cur/`) | SMTP submission plus a Sent copy | Implemented | Real mail that already syncs to disk |
 | `gmail` | None | None | Planned, enum only | Not available in v1 |
-| `x` | Mentions and DMs in a signed-in Chrome profile | Reply, DM, original post | Implemented, not yet live-canaried | X without opening x.com |
+| `x` | Mentions, DMs, feed, and notifications in a signed-in Chrome profile | Reply and DM (approval-gated) | Implemented, not yet live-canaried | X communication without opening x.com |
 
 `default_provider` in `config.toml` selects one. `herald ask --provider P`
 overrides it for a single command. `herald providers` prints the table above,
@@ -297,8 +297,6 @@ evasion. Signing in from a normal window, then reusing the profile for Herald's
 own operations, needs no trick and keeps the credential entry entirely human.
 Close the window when done; Herald verifies the session afterwards.
 
-X refuses posts longer than 280 characters, and so does Herald.
-
 Herald's own browser is launched with a minimal flag set, so it no longer passes
 `--enable-automation` (the "controlled by automated software" infobar and the
 `navigator.webdriver` marker). It does not spoof fingerprints or hide CDP:
@@ -319,7 +317,6 @@ result to.
 | --- | --- | --- |
 | `mention:<status_id>` | Public conversation rooted at a tweet | Read, reply |
 | `dm:<conversation_id>` | Private conversation | Read, reply (a DM) |
-| `timeline` | The compose surface. Not a conversation, identifies no recipient | Post only |
 
 `list_recent` honours a read scope: `all` merges the mentions tab and the DM
 list, `mentions` reads only mentions, `feed` reads the home timeline, `dms`
@@ -339,21 +336,19 @@ Unread is **local**: X exposes no reliable unread state in the DOM, so the
 adapter keeps a bounded seen-ledger at `<data-dir>/x-seen.json` and
 `get_thread` marks what it showed as seen.
 
-### Drafting posts with the local model
+### Drafting replies with the local model
 
-A post can be requested by topic ("tweet about the launch") instead of exact
-text. Any configured inference backend drafts the body: managed
-`llama-server`, an OpenAI-compatible local endpoint, or the `opencode` pool.
-The draft is capped at 280 characters (longer drafts are refused, never
-truncated), then follows the normal path: approval — or the autopost rails,
-which include the deterministic quality floor — before anything is typed into
-X. `herald ask 'post exactly: “…”'` still sends the user's exact words.
+A reply can be drafted from the user's request instead of exact text. Any
+configured inference backend drafts the body: managed `llama-server`, an
+OpenAI-compatible local endpoint, or the `opencode` pool. The draft then
+follows the normal path: approval before anything is typed into X. Herald has
+no post-drafting path; tweet generation and posting live in Zyquor (ADR 0011).
 
 ### Writes, idempotency, and verification
 
 `send_reply` opens the surface, fills the composer, clicks send once, then
 re-reads the page and looks for the exact body attributed to the configured
-handle. The receipt carries the status id for a post or reply and a documented
+handle. The receipt carries the status id for a reply and a documented
 synthetic id (`dm:<conversation_id>:<unix_ms>`) for a DM, where the DOM exposes
 no event id.
 
@@ -483,7 +478,6 @@ in `tests/`:
 | Get thread | yes | yes | yes | planned |
 | Prepare reply | yes | yes | yes (checks composer) | planned |
 | Send reply | in-memory | SMTP | browser composer | no |
-| Create post | no | no | timeline composer | no |
 | Verify send | in-thread | Sent folder | own-message body match | no |
 | Reconcile | in-thread | Sent folder | sent-ledger | no |
 | Mark as read | n/a | no, read-only | seen-ledger only | n/a |

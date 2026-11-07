@@ -133,11 +133,6 @@ pub enum Command {
         #[command(subcommand)]
         action: XAction,
     },
-    /// Inspect or flip the scoped autopost lane.
-    Autopost {
-        #[command(subcommand)]
-        action: AutopostAction,
-    },
     /// Read configuration values.
     Config {
         #[command(subcommand)]
@@ -200,16 +195,6 @@ pub enum XAction {
     /// Open a visible Chrome window on the dedicated profile and wait for the
     /// human to sign in. Herald never reads cookies or types credentials.
     Login,
-}
-
-#[derive(Debug, Clone, Copy, Subcommand)]
-pub enum AutopostAction {
-    /// Show the effective rails and today's remaining budget.
-    Status,
-    /// Remove the kill switch. Configuration must also allow autopost.
-    On,
-    /// Write the kill switch. Autonomous posts stop until `autopost on`.
-    Off,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

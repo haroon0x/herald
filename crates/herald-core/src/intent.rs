@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 
 /// The operation enums the classifier may choose from.
-const OPERATIONS: [&str; 8] = [
+const OPERATIONS: [&str; 7] = [
     "list_recent_messages",
     "list_unread_messages",
     "get_thread",
@@ -15,7 +15,6 @@ const OPERATIONS: [&str; 8] = [
     "summarize_thread",
     "prepare_reply",
     "send_reply",
-    "create_post",
 ];
 
 /// The one-question system prompt for tier 1 (intent classification).
@@ -56,7 +55,6 @@ Set needs_clarification to true only when:
 1. a reply or DM is requested but the text to send is not given
    ("send it", "reply to Sam", "draft a reply to Sam" are true;
     "send exactly: Thanks" and "draft a reply saying I'm interested" are false);
-   for "create_post", never ask for the text: a missing post body is drafted;
 2. a bulk or destructive action covers a set the user did not name
    ("delete everything", "archive the newsletter");
 3. the request is not about the user's messages ("what's the gist of the day");
@@ -69,7 +67,6 @@ is named. These are complete requests:
 - "search for invoices" -> false
 - "summarize the thread with Sam" -> false
 - "open the lease email" -> false
-- "tweet about the local-first release" -> create_post, false
 
 Enums and when to use them:
 - "send_reply": the user's main verb is send/respond AND the final outbound text is stated
@@ -81,10 +78,6 @@ Enums and when to use them:
 - "get_thread": open or read one specific conversation.
 - "list_unread_messages": check for new/unread/important items.
 - "list_recent_messages": show recent activity or latest messages.
-- "create_post": publish an original post to the user's own timeline (a tweet).
-  Use it when the user asks to post or tweet something, including when only a
-  topic is given ("tweet about the launch"); the text may be drafted later.
-  Never use it for a reply or a DM.
 
 After the operation, fill in two strings:
 - "question": the one question you would ask, or "" when you are not asking.
@@ -132,20 +125,6 @@ pub fn draft_system() -> String {
 Given: who the reply is for and what the user asked to convey.
 Write only the reply body. No subject, no signature, no commentary, no JSON.
 Be concise: 1-3 sentences, plain language, match the user's tone ("polite", "brief")."#
-        .to_string()
-}
-
-/// System prompt for tier 3 (post drafting) — plain text, no JSON.
-///
-/// The post is still an outbound body: it is validated, shown for approval (or
-/// scored against the autopost rails), and never sent from here.
-#[must_use]
-pub fn post_system() -> String {
-    r"You write one original post for the user's own timeline.
-Given the user's request, write only the post text. No quotation marks around it,
-no preamble, no commentary, no hashtags unless the user asked for them, no links
-unless the user supplied one. Keep it under 280 characters and match the user's
-tone. Do not write a reply or a direct message."
         .to_string()
 }
 

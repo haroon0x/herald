@@ -192,7 +192,6 @@
     // Explicit user action: bypass the read cache and check X exactly once.
     loadInbox(true);
     loadApprovals();
-    loadAutopost();
     loadHistory();
   }
 
@@ -430,22 +429,6 @@
     }
   }
 
-  async function loadAutopost() {
-    try {
-      const data = await api("/api/autopost");
-      const badge = $("autopost-badge");
-      badge.textContent = data.status === "enabled" ? "armed" : "approval only";
-      badge.dataset.state = data.status === "enabled" ? "on" : "off";
-      $("autopost-detail").textContent =
-        `${data.used_today} of ${data.daily_limit} posts today · quality floor ${data.min_quality}` +
-        (data.quiet_hours ? ` · quiet ${data.quiet_now ? "now" : data.quiet_hours}` : "") +
-        (data.kill_switch ? " · kill switch on" : "");
-      $("autopost-off").disabled = Boolean(data.kill_switch);
-    } catch (error) {
-      $("autopost-detail").textContent = error.message;
-    }
-  }
-
   function askApproval(approval) {
     state.pendingApproval = approval;
     $("dialog-target").textContent = `${approval.provider} · ${approval.target || approval.thread_id}`;
@@ -510,51 +493,6 @@
     }
   }
 
-  function updateComposeCount() {
-    const count = [...$("compose-body").value].length;
-    const counter = $("compose-count");
-    counter.textContent = `${count} / 280`;
-    counter.classList.toggle("is-over", count > 280);
-    $("compose-queue").disabled = count === 0 || count > 280;
-  }
-
-  function openCompose() {
-    $("compose-body").value = "";
-    $("compose-target").textContent = `${state.provider} · your timeline`;
-    updateComposeCount();
-    $("compose-dialog").showModal();
-    $("compose-body").focus();
-  }
-
-  async function queuePost(event) {
-    event.preventDefault();
-    const body = $("compose-body").value;
-    const count = [...body].length;
-    if (count === 0 || count > 280) {
-      toast("Body must be 1–280 characters.", true);
-      return;
-    }
-    setStatus("Queuing post…", true);
-    $("compose-queue").disabled = true;
-    try {
-      const data = await api("/api/post", {
-        method: "POST",
-        body: { body, provider: state.provider },
-      });
-      $("compose-dialog").close();
-      const status = data.status || "done";
-      toast(`${status}${data.action_id ? ` · ${data.action_id}` : ""}`);
-      setStatus(status === "awaiting_approval" ? "Awaiting approval" : "Idle");
-      await Promise.all([loadApprovals(), loadHistory()]);
-      switchTab("queue");
-    } catch (error) {
-      setStatus("Queue failed");
-      toast(error.message, true);
-    } finally {
-      updateComposeCount();
-    }
-  }
-
   async function showProviders() {
     const dialog = $("providers-dialog");
     const list = $("providers-list");
@@ -602,8 +540,7 @@
     $("provider").addEventListener("change", (event) => {
       state.provider = event.target.value;
       loadInbox();
-      loadAutopost();
-    });
+      });
 
     $("refresh").addEventListener("click", refreshAll);
 
@@ -666,22 +603,7 @@
 
     $("providers").addEventListener("click", showProviders);
     $("providers-close").addEventListener("click", () => $("providers-dialog").close());
-    $("compose").addEventListener("click", openCompose);
-    $("compose-cancel").addEventListener("click", () => $("compose-dialog").close());
-    $("compose-form").addEventListener("submit", queuePost);
-    $("compose-body").addEventListener("input", updateComposeCount);
     $("ask").addEventListener("submit", runAsk);
-
-    $("autopost-off").addEventListener("click", async () => {
-      if (!window.confirm("Write the autopost kill switch? Autonomous posts stop immediately.")) return;
-      try {
-        await api("/api/autopost", { method: "POST", body: { action: "off" } });
-        toast("Kill switch written. Autopost is off.");
-        loadAutopost();
-      } catch (error) {
-        toast(error.message, true);
-      }
-    });
 
     $("tab-thread").addEventListener("click", () => switchTab("thread"));
     $("tab-queue").addEventListener("click", () => switchTab("queue"));
@@ -716,7 +638,7 @@
     });
     $("scope-title").textContent = scopeTitles[state.scope];
     $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;
-    await Promise.all([loadInbox(), loadApprovals(), loadAutopost(), loadHistory()]);
+    await Promise.all([loadInbox(), loadApprovals(), loadHistory()]);
     const requestedThread = params.get("thread");
     const match = requestedThread && state.items.find((item) => item.thread_id === requestedThread);
     if (match) {

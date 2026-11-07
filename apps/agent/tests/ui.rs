@@ -2,8 +2,8 @@
 //!
 //! Spawns the real loopback server, checks that a request without the
 //! per-run token is refused, that the token'd page and API calls succeed
-//! with the expected headers, and that the autopost kill switch written
-//! through the API lands in the data directory.
+//! with the expected headers, and that the UI can queue an approval without
+//! ever sending it.
 
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -201,7 +201,7 @@ fn spawn_server(data: &Path, config: &Path) -> Server {
 }
 
 #[test]
-fn ui_post_queues_an_approval_and_sends_nothing() {
+fn ui_ask_queues_an_approval_and_sends_nothing() {
     let dir: TempDir = tempfile::tempdir().expect("tempdir");
     let data: PathBuf = dir.path().join("data");
     let config = dir.path().join("config.toml");
@@ -222,27 +222,29 @@ fn ui_post_queues_an_approval_and_sends_nothing() {
     let port = server.port;
     let token = server.token.clone();
 
-    let body = "herald e2e: compose should queue, never send";
-    let posted = request(
+    let body = "herald e2e: ask should queue, never send";
+    let queued = request(
         port,
         "POST",
-        "/api/post",
+        "/api/ask",
         &[
             ("X-Herald-Token", token.as_str()),
             ("Content-Type", "application/json"),
         ],
-        Some(&format!("{{\"body\":\"{body}\",\"provider\":\"fake\"}}")),
+        Some(&format!(
+            "{{\"instruction\":\"Send exactly: '{body}' to the founder\",\"provider\":\"fake\",\"enable_send\":true}}"
+        )),
     );
-    assert_eq!(posted.status, 200, "post body: {}", posted.body);
+    assert_eq!(queued.status, 200, "ask body: {}", queued.body);
     assert!(
-        posted.body.contains("\"awaiting_approval\""),
-        "post response: {}",
-        posted.body
+        queued.body.contains("\"awaiting_approval\""),
+        "ask response: {}",
+        queued.body
     );
     assert!(
-        posted.body.contains(body),
-        "the queued body is echoed: {}",
-        posted.body
+        queued.body.contains(body),
+        "queue response echoes the exact body: {}",
+        queued.body
     );
 
     let approvals = server.get("/api/approvals");
@@ -263,24 +265,6 @@ fn ui_post_queues_an_approval_and_sends_nothing() {
         history.body.contains("\"awaiting_approval\""),
         "history shows the pending approval, nothing sent: {}",
         history.body
-    );
-
-    // Over-long bodies and empty bodies are refused before reaching the CLI.
-    let too_long = format!("{{\"body\":\"{}\",\"provider\":\"fake\"}}", "x".repeat(281));
-    let rejected = request(
-        port,
-        "POST",
-        "/api/post",
-        &[
-            ("X-Herald-Token", token.as_str()),
-            ("Content-Type", "application/json"),
-        ],
-        Some(&too_long),
-    );
-    assert!(
-        rejected.body.contains("\"ok\":false"),
-        "281 chars refused: {}",
-        rejected.body
     );
 }
 
@@ -375,20 +359,25 @@ fn ui_server_requires_the_token_and_serves_authenticated_requests() {
         wrong.body
     );
 
-    // The autopost kill switch is reachable through the API.
-    let off = request(
-        port,
-        "POST",
-        "/api/autopost",
-        &[
-            ("X-Herald-Token", &token),
-            ("Content-Type", "application/json"),
-        ],
-        Some("{\"action\":\"off\"}"),
-    );
-    assert_eq!(off.status, 200, "autopost off body: {}", off.body);
-    assert!(
-        data.join("autopost.disabled").exists(),
-        "kill switch file written to the data dir"
-    );
+    // The removed posting endpoints are unknown to the router.
+    for path in ["/api/post", "/api/autopost"] {
+        let gone = request(
+            port,
+            "POST",
+            path,
+            &[
+                ("X-Herald-Token", &token),
+                ("Content-Type", "application/json"),
+            ],
+            Some("{}"),
+        );
+        assert!(
+            gone.body.contains("\"ok\":false"),
+            "{path} must be unknown: {}",
+            gone.body
+        );
+    }
+
+    // Nothing wrote a kill-switch file; the lane no longer exists.
+    assert!(!data.join("autopost.disabled").exists());
 }

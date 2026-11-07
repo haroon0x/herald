@@ -1,7 +1,7 @@
 # 0009: Scoped autopost for original posts
 
 Date: 2026-11-04
-Status: Accepted
+Status: Superseded by [0011](0011-no-posting-lane.md)
 Amends: [0005](0005-approval-queue-and-idempotency.md) (the approval rule) for
 one narrow lane.
 

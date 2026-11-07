@@ -260,27 +260,6 @@ impl Store {
         Ok(actions)
     }
 
-    /// Outbound actions of one operation that reached an approval or started
-    /// executing since `since_ms`.
-    ///
-    /// The autopost daily cap uses this; cancelled and failed plans are not
-    /// counted because they never left Herald. Counting approvals and
-    /// executions (including `uncertain`) keeps the cap conservative.
-    pub fn count_actions_by_operation_since(
-        &self,
-        operation: &str,
-        since_ms: i64,
-    ) -> Result<u32, StorageError> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM actions
-             WHERE operation = ?1 AND created_at >= ?2
-               AND state IN ('awaiting_approval', 'executing', 'succeeded', 'uncertain')",
-            params![operation, since_ms],
-            |row| row.get(0),
-        )?;
-        Ok(u32::try_from(count).unwrap_or(u32::MAX))
-    }
-
     pub fn get_action(&self, action_id: &str) -> Result<Option<ActionRecord>, StorageError> {
         let row = self
             .conn
@@ -804,42 +783,6 @@ mod tests {
         let events = store.recent_audit(10).unwrap();
         assert_eq!(events[0].status, "second");
         assert_eq!(events[1].status, "first");
-    }
-
-    #[test]
-    fn autopost_budget_counts_approvals_and_executions_only() {
-        let store = Store::open_in_memory().unwrap();
-        let mut planned = new_action("a1", ProviderId::X, "create_post", "timeline", None);
-        planned.created_at_ms = 2_000;
-        store.create_action(&planned).unwrap();
-        let mut queued = new_action("a2", ProviderId::X, "create_post", "timeline", None);
-        queued.created_at_ms = 2_100;
-        store.create_action(&queued).unwrap();
-        store
-            .transition_action("a2", ActionState::AwaitingApproval)
-            .unwrap();
-        let mut failed = new_action("a3", ProviderId::X, "create_post", "timeline", None);
-        failed.created_at_ms = 2_200;
-        store.create_action(&failed).unwrap();
-        let mut old = new_action("a4", ProviderId::X, "create_post", "timeline", None);
-        old.created_at_ms = 1_000;
-        store.create_action(&old).unwrap();
-        store
-            .transition_action("a4", ActionState::Executing)
-            .unwrap();
-
-        assert_eq!(
-            store
-                .count_actions_by_operation_since("create_post", 2_000)
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            store
-                .count_actions_by_operation_since("send_reply", 0)
-                .unwrap(),
-            0
-        );
     }
 
     #[test]

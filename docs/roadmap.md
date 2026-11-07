@@ -30,8 +30,8 @@ from the scaffold; that history is at the bottom.
 
 What v1.0 deliberately did not include: IMAP, Gmail, X, browser automation,
 auto-send, attachments, archive or delete, multi-account, sync, notifications,
-scheduling, a GUI, and a multi-step agent loop. X and its scoped autopost lane
-are the only exceptions added since (see the in-progress section below).
+scheduling, a GUI, and a multi-step agent loop. The X browser adapter is the
+only exception added since (see the in-progress section below).
 
 ## Measured, not assumed
 
@@ -58,25 +58,23 @@ as clarifying, and the model is still measured separately.
 The 42-case set is unchanged in v1.0. It covers intent and refusal, not Maildir
 parsing or approval correctness; those have their own tests.
 
-## In progress, unreleased: X adapter and scoped autopost
+## In progress, unreleased: X adapter
 
 This work sits on top of v1.0 and is not a numbered release yet. It ships when
-the live canary passes (post, DM to self, metrics absent by design) and the
-owner has signed off.
+the live canary passes (approval-gated reply, DM to self, metrics absent by
+design) and the owner has signed off.
 
 - **X provider** (`x`): mentions and DMs over a dedicated Chrome profile,
-  replies, DMs, and original posts, with constant selectors, a local seen
+  approval-gated replies and DMs, with constant selectors, a local seen
   ledger, a sent ledger, verified sends, and hard stops on challenges. See
   [ADR 0008](decisions/0008-x-browser-adapter.md).
-- **Scoped autopost** for original timeline posts only, with every rail
-  (double opt-in, kill switch, quiet hours, UTC daily cap, deterministic quality
-  floor). Replies and DMs still require approval. See
-  [ADR 0009](decisions/0009-scoped-autopost.md).
-- **Eval set grows to 45 cases** with three post cases; the rules engine scores
-  45/45. The historical 42-case numbers above describe the v1.0 baseline.
+- **No posting lane.** Tweet generation and posting stay in Zyquor. See
+  [ADR 0011](decisions/0011-no-posting-lane.md).
+- **Eval set stays at 42 cases**; the historical 45-case measurement below
+  describes the removed posting work, not the current capability set.
 - **`opencode` inference backend**: one-shot `opencode run --standalone
   --model <id>` subprocess, no `--auto`, no server reverse-engineering.
-- **Not included:** post metrics (needs a new capability and ADR), scheduling,
+- **Not included:** post metrics (Zyquor's pipeline owns posting performance), scheduling,
   threads, likes, follows, or delete.
 
 ## Next after the X canary: feed, notifications, DM list, GUI
@@ -96,7 +94,7 @@ These are requested and tracked, not shipped:
   shell is planned but blocked on system packages (`webkit2gtk-4.1`, `gtk+-3.0`)
   that only the owner can install; the same page and API are meant to be wrapped
   unchanged. No GUI adds a second execution path.
-- **Post metrics.** Still needs a new operation and an ADR (ADR 0008).
+- **Post metrics.** Not implemented in Herald; the Zyquor pipeline owns posting performance.
 
 ## v1.1: IMAP, read-only
 
@@ -242,11 +240,13 @@ CPU, 4 threads): 26/45, all 45 answers parsed, no retries, 216 s. That is below
 the 32/42 v1.0 baseline, so the gate stays open.
 
 The failure mode changed. The flag no longer collapses: there is one false
-positive, and three of the eleven clarification cases are caught. Every
-`create_post` case is read as a reply or a draft, and
-`inject-follow-instructions` plans a send. Of the five `target_contains` cases,
-the three that reached target scoring matched; the other two failed on the
-operation before the phrase was compared.
+positive, and three of the eleven clarification cases are caught. In that
+historical 45-case set, the removed `create_post` operation was read as a reply
+or a draft, and `inject-follow-instructions` plans a send. Of the five
+`target_contains` cases, the three that reached target scoring matched; the
+other two failed on the operation before the phrase was compared. Those cases
+were removed when the posting lane was deleted (ADR 0011); the same model
+measurement is not comparable to the current 42-case set.
 
 Getting to that number took a plumbing fix, and it belongs in the result. The
 sidecar started `llama-server` without `--jinja` and never turned thinking off,

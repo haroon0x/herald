@@ -25,7 +25,6 @@ Commands:
   audit        Show the append-only audit log
   providers    List providers and their health
   x            X adapter commands
-  autopost     Inspect or flip the scoped autopost lane
   config       Read configuration values
   model        Manage the model artifact
   eval         Score the checked-in command set against an engine
@@ -195,10 +194,10 @@ ambiguous or when scripting. The id is still re-resolved and checked at approve
 time.
 `--body-env <VAR>` reads the exact outbound body from the environment variable
 `VAR` instead of any model draft (no drafting is attempted). It is for callers
-that already hold the body — the `herald ui` composer is the caller this exists
-for — and the body never travels in argv. An unset or whitespace-only variable
-is rejected with `invalid_plan`. The plan still passes validation and policy:
-with `--enable-send` the body is queued as an approval, never sent directly.
+that already hold the body and the body never travels in argv. An unset or
+whitespace-only variable is rejected with `invalid_plan`. The plan still
+passes validation and policy: with `--enable-send` the body is queued as an
+approval, never sent directly.
 
 A read:
 
@@ -215,41 +214,14 @@ target:     check what is unread
 new:        2 recorded
 ```
 
-A post requested by topic is drafted by the configured model and then follows
-the normal approval path:
-
-```console
-$ herald ask 'tweet about the local-first release' --provider x --enable-send
-provider:   x
-operation:  create_post
-target:     your timeline
-body:       Shipped the local-first release. Your comms, your machine.
-hash:       0754...
-```
-
-An original post goes to the timeline, not a conversation:
+Post or tweet requests are declined deterministically; Herald has no posting
+operation. See [ADR 0011](decisions/0011-no-posting-lane.md).
 
 ```console
 $ herald ask 'Post exactly: "Shipping the X adapter today."' --provider x --enable-send
-provider:   x
-operation:  create_post
-target:     your timeline
-body:       Shipping the X adapter today.
-hash:       8c1d2f...
-
-Approval required
-action:     2b7e9f04-...
-provider:   x
-target:     your timeline
-thread:     timeline
-body:       Shipping the X adapter today.
-hash:       8c1d2f...
+decision: clarification required
+question: Herald does not post to social networks. Nothing was posted. It reads and replies to your messages instead.
 ```
-
-With the autopost lane fully enabled and every rail passing, the same command
-publishes and verifies instead of queuing (see `herald autopost status`).
-Otherwise it queues exactly like a reply. `timeline` identifies no recipient:
-a post never resolves to a person.
 
 A send that names no conversation fails closed:
 
@@ -559,37 +531,6 @@ signed in: the X adapter can read this profile.
 `data`: `{"status":"authenticated","provider":"x","profile":"..."}`.
 Exit code 8 (`timeout`) if no signed-in timeline appears.
 
-### `herald autopost`
-
-```text
-herald autopost status
-herald autopost off
-herald autopost on
-```
-
-`status` prints every rail and the effective send path. `off` writes the kill
-switch file `<data-dir>/autopost.disabled`; `on` removes it. Neither edits
-`config.toml`: configuration must also set `allow_autopost = true` and
-`allow_send = true`.
-
-```console
-$ herald autopost status
-Autopost
-configured:   off
-kill switch:  off
-quiet hours:  22:00-06:00 UTC (inactive)
-daily budget: 0/5 used today (UTC)
-remaining:    5 post(s)
-quality floor: 7/10
-send path:    approval only
-
-Everything still goes through the approval queue. Nothing autoposts.
-```
-
-`data`: `{"status","configured","kill_switch","quiet_hours","quiet_now",
-"daily_limit","used_today","remaining_today","min_quality","today_start_ms"}`.
-`off`/`on` emit `{"status","kill_switch","configured","path"}`.
-
 ### `herald ui`
 
 ```text
@@ -609,7 +550,7 @@ Every API call needs the token; the page cannot be opened without it. See
 $ herald ui --open
 Herald UI  http://127.0.0.1:7878/?token=4f1c…
 Loopback only. Every API call needs the token. Ctrl+C stops it.
-Approvals and autopost are the same rails as the CLI.
+Approvals are the same queue as the CLI.
 ```
 
 This command does not return while the server runs; exit code 1 if the port

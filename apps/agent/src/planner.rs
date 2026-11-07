@@ -20,9 +20,6 @@ use crate::error::AppError;
 pub const CLASSIFY_MAX_TOKENS: u16 = 512;
 pub const RETRY_MAX_TOKENS: u16 = 512;
 pub const DRAFT_MAX_TOKENS: u16 = 256;
-/// X rejects a post longer than this. A drafted post above it is refused rather
-/// than truncated, because truncation changes what the user approved.
-pub const POST_MAX_CHARS: usize = 280;
 pub const SUMMARY_MAX_TOKENS: u16 = 320;
 const SUMMARY_CONTEXT_CHARS: usize = 6_000;
 const SUMMARY_MAX_MESSAGES: usize = 8;
@@ -104,25 +101,6 @@ impl Model {
             )
             .await
             .map_err(|error| AppError::new("model", format!("drafting failed: {error}")))
-    }
-
-    /// Draft an original post from the user's request. Plain text, no JSON.
-    pub async fn draft_post(&self, instruction: &str) -> Result<String, AppError> {
-        let user = format!(
-            "<user-instruction>\n{}\n</user-instruction>",
-            instruction.trim()
-        );
-        self.backend
-            .complete_text(&herald_core::intent::post_system(), &user, DRAFT_MAX_TOKENS)
-            .await
-            .map(|raw| clean_draft(&raw))
-            .map_err(|error| AppError::new("model", format!("post drafting failed: {error}")))
-    }
-
-    /// Whether any answer in this process came from the local fallback.
-    #[must_use]
-    pub fn used_fallback(&self) -> bool {
-        self.backend.used_fallback()
     }
 
     /// Summarize one thread. Every message is wrapped as untrusted data.
@@ -247,15 +225,7 @@ pub async fn plan(
     provider: ProviderId,
     instruction: &str,
 ) -> Result<Option<ActionPlan>, AppError> {
-    if let Some(mut plan) = rules::plan_offline(provider, instruction) {
-        // "Tweet about the launch" has no body, so rules ask instead of
-        // guessing. With a model available the body can be drafted, and the
-        // plan becomes a real post request; rules-only runs keep the question.
-        if model.is_some() && plan.needs_clarification && plan.target == Target::Timeline {
-            plan.operation = Operation::CreatePost;
-            plan.needs_clarification = false;
-            plan.clarification_question = None;
-        }
+    if let Some(plan) = rules::plan_offline(provider, instruction) {
         return Ok(Some(plan));
     }
 
@@ -298,11 +268,7 @@ pub fn plan_from_classification(
     classification: &Classification,
 ) -> ActionPlan {
     let phrase = classification.target.trim();
-    // A post never identifies a recipient: the model may describe the topic,
-    // but the target is always the user's own timeline.
-    let target = if classification.operation == Operation::CreatePost {
-        Target::Timeline
-    } else if phrase.is_empty() {
+    let target = if phrase.is_empty() {
         rules::target_hint(instruction)
     } else {
         Target::Description {
@@ -333,38 +299,15 @@ pub async fn draft_missing_body(model: &Model, plan: &mut ActionPlan, instructio
         return;
     }
 
-    match plan.operation {
-        Operation::PrepareReply => match model.draft(&plan.target.describe(), instruction).await {
+    if plan.operation == Operation::PrepareReply {
+        match model.draft(&plan.target.describe(), instruction).await {
             Ok(body) if !body.trim().is_empty() => {
                 plan.reply_body = Some(body.trim().to_string());
             }
             Ok(_) => tracing::warn!("the model returned an empty draft"),
             Err(error) => tracing::warn!(%error, "drafting failed"),
-        },
-        Operation::CreatePost => match model.draft_post(instruction).await {
-            Ok(body) if !body.is_empty() && body.chars().count() <= POST_MAX_CHARS => {
-                plan.reply_body = Some(body);
-            }
-            Ok(body) => tracing::warn!(
-                chars = body.chars().count(),
-                "drafted post is empty or longer than {POST_MAX_CHARS} characters; left for clarification"
-            ),
-            Err(error) => tracing::warn!(%error, "post drafting failed"),
-        },
-        _ => {}
-    }
-}
-
-/// Trim model decoration without changing the words: surrounding whitespace and
-/// one pair of wrapping quotes are removed; nothing inside is rewritten.
-fn clean_draft(raw: &str) -> String {
-    let trimmed = raw.trim();
-    for quote in ['"', '\''] {
-        if trimmed.len() >= 2 && trimmed.starts_with(quote) && trimmed.ends_with(quote) {
-            return trimmed[1..trimmed.len() - 1].trim().to_string();
         }
     }
-    trimmed.to_string()
 }
 
 fn summarize_prompt(thread: &Thread, instruction: &str) -> (String, String) {
@@ -587,116 +530,6 @@ mod tests {
             rules::target_hint("Summarize the lease dispute thread."),
             Target::Description { .. }
         ));
-    }
-
-    /// The question is only used when the flag is set, so a stray question on a
-    /// read can never reach the user or turn into a clarification.
-    #[test]
-    fn a_model_post_target_is_forced_to_the_timeline() {
-        let plan = plan_from_classification(
-            ProviderId::X,
-            "Tweet about the local-first release.",
-            &classification(Operation::CreatePost, false, "", "the local-first release"),
-        );
-        assert_eq!(plan.target, Target::Timeline);
-        assert_eq!(plan.operation, Operation::CreatePost);
-    }
-
-    #[test]
-    fn clean_draft_strips_one_pair_of_wrapping_quotes() {
-        assert_eq!(clean_draft("  \"hello world\"  "), "hello world");
-        assert_eq!(clean_draft("say \"hi\" now"), "say \"hi\" now");
-        assert_eq!(clean_draft("plain"), "plain");
-    }
-
-    #[derive(Debug)]
-    struct StubInference(&'static str);
-
-    #[async_trait::async_trait]
-    impl Inference for StubInference {
-        async fn complete_json(
-            &self,
-            _system: &str,
-            _user: &str,
-            _max_tokens: u16,
-            _schema: Option<&serde_json::Value>,
-        ) -> Result<String, herald_runtime::RuntimeError> {
-            Err(herald_runtime::RuntimeError::BadResponse("not used".into()))
-        }
-
-        async fn complete_text(
-            &self,
-            _system: &str,
-            _user: &str,
-            _max_tokens: u16,
-        ) -> Result<String, herald_runtime::RuntimeError> {
-            Ok(self.0.to_string())
-        }
-    }
-
-    #[derive(Debug)]
-    struct FallbackStub;
-
-    #[async_trait::async_trait]
-    impl Inference for FallbackStub {
-        async fn complete_json(
-            &self,
-            _system: &str,
-            _user: &str,
-            _max_tokens: u16,
-            _schema: Option<&serde_json::Value>,
-        ) -> Result<String, herald_runtime::RuntimeError> {
-            Err(herald_runtime::RuntimeError::BadResponse("no".into()))
-        }
-
-        async fn complete_text(
-            &self,
-            _system: &str,
-            _user: &str,
-            _max_tokens: u16,
-        ) -> Result<String, herald_runtime::RuntimeError> {
-            Ok("fallback".into())
-        }
-
-        fn used_fallback(&self) -> bool {
-            true
-        }
-    }
-
-    #[test]
-    fn model_reports_that_a_fallback_answered() {
-        let model = Model::new(Box::new(FallbackStub));
-        assert!(model.used_fallback());
-        let model = Model::new(Box::new(StubInference("x")));
-        assert!(!model.used_fallback());
-    }
-
-    #[tokio::test]
-    async fn a_drafted_post_fills_the_body_and_rejects_oversize_text() {
-        let model = Model::new(Box::new(StubInference("\"Shipping it today.\"")));
-        let mut plan = ActionPlan {
-            provider: ProviderId::X,
-            operation: Operation::CreatePost,
-            target: Target::Timeline,
-            reply_body: None,
-            needs_clarification: false,
-            clarification_question: None,
-        };
-        draft_missing_body(&model, &mut plan, "tweet about shipping").await;
-        assert_eq!(plan.reply_body.as_deref(), Some("Shipping it today."));
-
-        let long = Box::leak("x".repeat(POST_MAX_CHARS + 1).into_boxed_str());
-        let model = Model::new(Box::new(StubInference(long)));
-        let mut plan = ActionPlan {
-            provider: ProviderId::X,
-            operation: Operation::CreatePost,
-            target: Target::Timeline,
-            reply_body: None,
-            needs_clarification: false,
-            clarification_question: None,
-        };
-        draft_missing_body(&model, &mut plan, "tweet about shipping").await;
-        assert!(plan.reply_body.is_none());
     }
 
     #[test]

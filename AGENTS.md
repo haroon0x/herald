@@ -17,13 +17,10 @@ actions after an explicit policy check and user approval.
   (`planned -> awaiting_approval -> executing -> succeeded | failed | uncertain`,
   plus `cancelled`). Every outbound action carries a client token. Never
   blind-retry an `uncertain` send; reconcile it with `find_sent`.
-- **Sending requires confirmation, with exactly one exception.** `allow_send`
+- **Sending requires confirmation, with no exception.** `allow_send`
   permits an approval to be created; `herald approve` is the only path to the
-  wire — except the scoped autopost lane in [ADR 0009](docs/decisions/0009-scoped-autopost.md).
-  That lane covers original timeline posts only, requires `allow_autopost` and
-  every rail (kill switch, quiet hours, daily budget, quality floor), and never
-  applies to replies or DMs. Do not add auto-send anywhere else; widening the
-  lane is an ADR, not a flag.
+  wire. Herald has no posting lane and no auto-send anywhere; reintroducing
+  either requires a new ADR, not a flag. See [ADR 0011](docs/decisions/0011-no-posting-lane.md).
 - **Browser automation exists only for the X adapter.** It runs on a dedicated
   profile (never the user's everyday Chrome profile), the human signs in, and
   Herald never reads cookies or credentials. Selectors and URLs stay constants

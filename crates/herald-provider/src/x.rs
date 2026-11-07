@@ -77,9 +77,9 @@ const SEL_DM_TEXT: &str = r#"div[data-testid="messageText"]"#;
 /// Avatar hook that names the sender. Grouped messages omit it; the previous
 /// sender carries over.
 const SEL_DM_AVATAR: &str = r#"[data-testid^="UserAvatar-Container-"]"#;
-/// Inline composer on the home timeline and on status pages.
+/// Inline composer on status pages (mention replies).
 const SEL_COMPOSER: &str = r#"div[data-testid="tweetTextarea_0"]"#;
-/// Inline "Post" button on the home timeline.
+/// Inline "Post" button on status pages (submits a mention reply).
 const SEL_POST_BUTTON: &str = r#"div[data-testid="tweetButtonInline"]"#;
 /// DM message input.
 const SEL_DM_COMPOSER: &str = r#"div[data-testid="dmComposerTextInput"]"#;
@@ -103,8 +103,6 @@ const SEEN_LEDGER_LIMIT: usize = 5_000;
 /// stops a script (or a repeated approval) from turning into a burst, which is
 /// the behaviour most likely to get an account actioned.
 const MIN_WRITE_INTERVAL_MS: i64 = 60_000;
-/// X's hard limit for an original post.
-const MAX_POST_CHARS: usize = 280;
 /// Hard local ceiling on outbound X actions per rolling hour.
 const MAX_WRITES_PER_HOUR: usize = 6;
 /// Hard local ceiling on outbound X actions per UTC day.
@@ -227,13 +225,13 @@ impl PageBlocker {
     }
 }
 
-/// What a thread id refers to. The three namespaces are the whole model:
-/// `mention:<status id>`, `dm:<conversation id>`, and `timeline`.
+/// What a thread id refers to. The two namespaces are the whole model:
+/// `mention:<status id>` and `dm:<conversation id>`. Herald has no posting
+/// operation; there is no timeline target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum XTarget {
     Mention(String),
     Dm(String),
-    Timeline,
 }
 
 impl fmt::Display for XTarget {
@@ -241,7 +239,6 @@ impl fmt::Display for XTarget {
         match self {
             Self::Mention(id) => write!(f, "mention:{id}"),
             Self::Dm(id) => write!(f, "dm:{id}"),
-            Self::Timeline => f.write_str("timeline"),
         }
     }
 }
@@ -560,19 +557,6 @@ impl XProvider {
         let client = self.ensure_client(slot).await?;
 
         let (subject, messages) = match &target {
-            XTarget::Timeline => {
-                client.open(HOME_URL).await?;
-                let state = parse_compose_state(&client.html().await?)?;
-                if !state.authenticated {
-                    return Err(ProviderError::NotAuthenticated);
-                }
-                if !state.composer_present {
-                    return Err(ProviderError::UnexpectedLayout(
-                        "the X home composer is missing; Herald cannot post".into(),
-                    ));
-                }
-                ("New post".to_string(), Vec::new())
-            }
             XTarget::Mention(status_id) => {
                 client.open(&mention_url(status_id)).await?;
                 let items = parse_tweet_thread(&client.html().await?)?;
@@ -584,7 +568,7 @@ impl XProvider {
                 let subject = items
                     .first()
                     .map_or_else(|| format!("Post {status_id}"), |item| item.subject.clone());
-                let messages = items
+                let messages: Vec<ProviderMessage> = items
                     .into_iter()
                     .map(|item| ProviderMessage {
                         id: item.id,
@@ -603,7 +587,7 @@ impl XProvider {
                 client.open(&dm_url(conversation)).await?;
                 let items = parse_dm_thread(&client.html().await?, conversation, Some(&handle))?;
                 let subject = format!("DM {conversation}");
-                let messages = items
+                let messages: Vec<ProviderMessage> = items
                     .into_iter()
                     .map(|item| ProviderMessage {
                         id: item.id,
@@ -651,21 +635,11 @@ impl XProvider {
             ));
         }
         let target = resolve_target(id)?;
-        if target == XTarget::Timeline && body.chars().count() > MAX_POST_CHARS {
-            return Err(ProviderError::Other(format!(
-                "an X post is limited to {MAX_POST_CHARS} characters; this body has {}",
-                body.chars().count()
-            )));
-        }
         // Verification needs an identity to match the posted message against.
         self.require_handle()?;
 
         let client = self.ensure_client(slot).await?;
         match &target {
-            XTarget::Timeline => {
-                client.open(HOME_URL).await?;
-                ensure_composer(client, SEL_COMPOSER, SEL_POST_BUTTON).await?;
-            }
             XTarget::Mention(status_id) => {
                 client.open(&mention_url(status_id)).await?;
                 ensure_composer(client, SEL_COMPOSER, SEL_POST_BUTTON).await?;
@@ -733,7 +707,6 @@ impl XProvider {
         let client = self.ensure_client(slot).await?;
 
         let (compose_selector, send_selector, verify_url) = match &target {
-            XTarget::Timeline => (SEL_COMPOSER, SEL_POST_BUTTON, profile_url(&handle)),
             XTarget::Mention(status_id) => (SEL_COMPOSER, SEL_POST_BUTTON, mention_url(status_id)),
             XTarget::Dm(conversation) => {
                 (SEL_DM_COMPOSER, SEL_DM_SEND_BUTTON, dm_url(conversation))
@@ -751,7 +724,7 @@ impl XProvider {
         client.open(&verify_url).await?;
         let verify_selector = match &target {
             XTarget::Dm(_) => SEL_DM_MESSAGE,
-            XTarget::Mention(_) | XTarget::Timeline => SEL_TWEET_ARTICLE,
+            XTarget::Mention(_) => SEL_TWEET_ARTICLE,
         };
         client.wait_for(verify_selector, PAGE_TIMEOUT).await?;
         let html = client.html().await?;
@@ -773,7 +746,7 @@ impl XProvider {
                     ),
                 }
             }
-            XTarget::Mention(_) | XTarget::Timeline => {
+            XTarget::Mention(_) => {
                 let items = parse_tweet_thread(&html)?;
                 let found = items.iter().find(|item| {
                     is_own(&item.sender, &handle) && same_body(item.body.as_ref(), &action.body)
@@ -1431,9 +1404,6 @@ async fn pause(milliseconds: u64) {
 
 fn resolve_target(id: &ThreadId) -> Result<XTarget, ProviderError> {
     let raw = id.as_str();
-    if raw == "timeline" {
-        return Ok(XTarget::Timeline);
-    }
     if let Some(status_id) = raw.strip_prefix("mention:")
         && !status_id.is_empty()
         && status_id.len() <= 20
@@ -1461,7 +1431,6 @@ fn target_url(target: &XTarget) -> String {
     match target {
         XTarget::Mention(status_id) => mention_url(status_id),
         XTarget::Dm(conversation) => dm_url(conversation),
-        XTarget::Timeline => HOME_URL.to_string(),
     }
 }
 
@@ -1471,10 +1440,6 @@ fn mention_url(status_id: &str) -> String {
 
 fn dm_url(conversation: &str) -> String {
     format!("https://x.com/messages/{conversation}")
-}
-
-fn profile_url(handle: &str) -> String {
-    format!("https://x.com/{}", handle.trim_start_matches('@'))
 }
 
 fn dm_synthetic_id(conversation: &str, sent_at_ms: i64) -> String {
@@ -2108,15 +2073,6 @@ mod tests {
         <p>Rate limit exceeded. Please wait a few minutes.</p>
     </div></body></html>"#;
 
-    const PROFILE_AFTER_POST: &str = r#"<html><body><div data-testid="primaryColumn">
-        <article data-testid="tweet">
-          <div data-testid="User-Name"><span>Me</span><span>@me</span></div>
-          <div data-testid="tweetText">Shipping the X adapter today.</div>
-          <a href="/me/status/999">Nov 4</a>
-          <time datetime="2026-11-04T12:00:00.000Z"></time>
-        </article>
-    </div></body></html>"#;
-
     const MENTION_AFTER_REPLY: &str = r#"<html><body><div data-testid="primaryColumn">
         <article data-testid="tweet">
           <div data-testid="User-Name"><span>Alex Founder</span><span>@alex</span></div>
@@ -2271,6 +2227,7 @@ mod tests {
             "dm:../../evil",
             "dm:has space",
             "gmail:1",
+            "timeline",
             "",
         ] {
             assert!(
@@ -2448,34 +2405,10 @@ mod tests {
             XProvider::with_client(cfg, tmp.path().to_path_buf(), Box::new(ScriptedX::new()));
         assert!(matches!(
             provider
-                .prepare_reply(&ThreadId::new("timeline"), "hello", "tok")
+                .prepare_reply(&ThreadId::new("mention:111"), "hello", "tok")
                 .await,
             Err(ProviderError::NotConfigured(_))
         ));
-    }
-
-    #[tokio::test]
-    async fn timeline_requires_the_composer_before_approval() {
-        let tmp = tempfile::tempdir().unwrap();
-        let provider = open_provider(&tmp, ScriptedX::new().page(HOME_URL, LOGIN_HTML));
-        assert!(matches!(
-            provider
-                .prepare_reply(&ThreadId::new("timeline"), "hello", "tok")
-                .await,
-            Err(ProviderError::NotAuthenticated)
-        ));
-    }
-
-    #[tokio::test]
-    async fn timeline_thread_is_an_empty_synthetic_thread() {
-        let tmp = tempfile::tempdir().unwrap();
-        let provider = open_provider(&tmp, ScriptedX::new().page(HOME_URL, COMPOSE_HTML));
-        let thread = provider
-            .get_thread(&ThreadId::new("timeline"))
-            .await
-            .unwrap();
-        assert_eq!(thread.id.as_str(), "timeline");
-        assert_eq!(thread.messages.len(), 0);
     }
 
     #[tokio::test]
@@ -2509,28 +2442,6 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-    }
-
-    #[tokio::test]
-    async fn timeline_post_is_verified_from_the_profile() {
-        let tmp = tempfile::tempdir().unwrap();
-        let client = ScriptedX::new()
-            .page(HOME_URL, COMPOSE_HTML)
-            .page("https://x.com/me", PROFILE_AFTER_POST)
-            .after_click(HOME_URL, COMPOSE_HTML);
-        let provider = open_provider(&tmp, client);
-        let action = provider
-            .prepare_reply(
-                &ThreadId::new("timeline"),
-                "Shipping the X adapter today.",
-                "tok-post",
-            )
-            .await
-            .unwrap();
-        let receipt = provider.send_reply(&action).await.unwrap();
-        assert!(receipt.verified);
-        assert_eq!(receipt.thread_id.as_str(), "timeline");
-        assert_eq!(receipt.provider_message_id.as_str(), "mention:999");
     }
 
     #[tokio::test]

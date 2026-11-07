@@ -37,15 +37,6 @@
         <button class="ghost" id="providers" type="button">Providers</button>
       </div>
 
-      <section class="autopost" aria-label="Autopost">
-        <div class="autopost-head">
-          <span class="kicker">Autopost</span>
-          <span class="badge" id="autopost-badge">…</span>
-        </div>
-        <p id="autopost-detail">Checking rails…</p>
-        <button class="ghost danger" id="autopost-off" type="button" disabled>Kill switch</button>
-      </section>
-
       <footer class="rail-foot">
         <span id="cfg-path">config: …</span>
         <span class="tiny">Nothing sends without approval.</span>
@@ -66,7 +57,6 @@
             <span id="status" class="status" aria-live="polite">Idle</span>
             <span class="tiny" id="count-line">—</span>
           </div>
-          <button class="run compose" id="compose" type="button">Compose</button>
         </div>
       </header>
 
@@ -114,7 +104,7 @@
       <form class="ask" id="ask" autocomplete="off">
         <label class="ask-label" for="instruction">Ask Herald</label>
         <div class="ask-row">
-          <textarea id="instruction" rows="1" placeholder="read my mentions · summarize the latest from the founder · post exactly: “…”"></textarea>
+          <textarea id="instruction" rows="1" placeholder="read my mentions · summarize the latest from the founder"></textarea>
           <button class="run" type="submit">Run</button>
         </div>
         <div class="ask-foot">
@@ -142,24 +132,6 @@
         <div class="dialog-actions">
           <button value="cancel" class="ghost" type="submit">Cancel</button>
           <button value="confirm" class="run danger" id="dialog-confirm" type="submit">Approve &amp; send</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog id="compose-dialog">
-      <form class="dialog-card compose-card" id="compose-form" autocomplete="off">
-        <div class="kicker">Post</div>
-        <h3>Compose a post</h3>
-        <p class="dialog-target" id="compose-target"></p>
-        <label class="ask-label" for="compose-body">Body</label>
-        <textarea id="compose-body" class="compose-body" rows="4" maxlength="280" placeholder="What should the post say?" aria-describedby="compose-count"></textarea>
-        <div class="compose-foot">
-          <span class="tiny">Creates an approval; nothing is sent.</span>
-          <span class="tiny compose-count" id="compose-count">0 / 280</span>
-        </div>
-        <div class="dialog-actions">
-          <button class="ghost" id="compose-cancel" type="button">Cancel</button>
-          <button class="run" id="compose-queue" type="submit">Queue post</button>
         </div>
       </form>
     </dialog>

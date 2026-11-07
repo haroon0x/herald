@@ -88,10 +88,8 @@ a default, or a future feature.
 
 - `PolicyConfig::allow_send` defaults to `false`; a send without it is
   rejected before any approval exists.
-- `authorize` expresses a send as `NeedsApproval(ApprovalRequest)` except for
-  an original timeline post when every autopost rail passes
-  ([ADR 0009](decisions/0009-scoped-autopost.md)); that branch has one test per
-  rail and no other send can reach it.
+- `authorize` expresses every send as `NeedsApproval(ApprovalRequest)`. There
+  is no posting lane and no other send can skip that arm.
 - The executor refuses `Action::Send` outright. The only caller of `send_reply`
   is `approve`, which loads the approval row by id.
 - There is no auto-send setting in the type system.
@@ -102,25 +100,24 @@ a default, or a future feature.
 `apps/agent/src/send.rs::execute_allowed` refuses `Action::Send` with
 `invalid_state`; a direct test for that guard is still on the list.
 
-### Autonomous post without every rail
+### Posting lane or any other auto-send
 
-**Path.** The autopost lane becomes a general auto-send: a reply or DM posts
-itself, the daily cap is bypassed, or a rail silently defaults to "pass".
+**Path.** A new operation, a config flag, or a legacy `Target::Timeline` queue
+entry becomes a general auto-send: a reply or DM sends itself, or a stale
+approval is approved after the posting lane was removed.
 
-**Controls.** The lane is scoped to `Operation::CreatePost` with
-`Target::Timeline`; the executor refuses any other target on the autopost path.
-`allow_send` and `allow_autopost` are separate defaults-false switches. The
-kill switch is a file checked on every `ask`. Quiet hours and the daily budget
-are computed in the CLI and passed into core; a storage error yields zero
-remaining. The quality floor is deterministic local code, never the model. Any
-rail failing produces `NeedsApproval`. Audit details are prefixed `autopost:`
-so the lane is distinguishable after the fact.
+**Controls.** Herald has no `CreatePost` operation and no autopost policy type.
+`validate_plan` refuses the legacy `Target::Timeline` for every operation, the
+X adapter rejects `timeline` thread ids (only `mention:` and `dm:` resolve),
+and approval re-resolution fails closed for a legacy timeline approval. A stale
+config file that still carries autopost keys fails to parse. Any rail failing
+produces `NeedsApproval`.
 
-**Test.** The `policy.rs` autopost tests cover every rail individually
-(`autopost_disabled_needs_approval`, quiet hours, exhausted budget, wrong
-target, below-floor body, all-rails-pass); `herald-storage` proves the budget
-query counts approvals and executions, and a CLI test proves a post queues an
-approval while the lane is off.
+**Test.** `timeline_target_is_refused_for_every_operation` and
+`timeline_send_needs_approval_and_never_auto_sends` in `herald-core`,
+`thread_ids_are_validated_before_any_navigation` in the X adapter, and the
+`stale_autopost_config_keys_fail_closed` config test. The CLI test proves a
+post request is declined and no approval or ledger entry is created.
 
 ### Compromised X browser profile or page content
 
@@ -161,13 +158,13 @@ cross-site requests cannot carry it and a custom header forces a CORS
 preflight that the server does not answer. A present `Origin` must match the
 loopback origin. CSP is `default-src 'self'`; requests are capped at 64 KiB;
 message content is rendered with `textContent`. The server has no domain logic:
-it spawns `herald --json`, so the approval queue, hash check, and autopost
-rails are the same code paths as the terminal.
+it spawns `herald --json`, so the approval queue and hash check are the same
+code paths as the terminal.
 
-**Test.** Token comparison, percent-decoding, argument bounds, ask mapping, and
-autopost action validation in `apps/agent/src/ui.rs`; the page and API were
-smoke-tested through real HTTP requests, and approve/reject were exercised
-end-to-end against the fake provider.
+**Test.** Token comparison, percent-decoding, argument bounds, and ask mapping
+in `apps/agent/src/ui.rs`; the page and API were smoke-tested through real
+HTTP requests, and approve/reject were exercised end-to-end against the fake
+provider.
 
 ### Approval bypass by state manipulation
 
@@ -400,9 +397,9 @@ the data directory removes everything Herald keeps. See
 | Reads dedupe | `deduplicates_messages` | `herald-storage/src/lib.rs` |
 | Executor refuses sends | Guard in `execute_allowed`; direct test pending | `apps/agent/src/send.rs` |
 | Sender matching does not guess | `sender_matching_strips_a_leading_the` | `apps/agent/src/send.rs` |
-| No autopost without every rail | `autopost_*` tests | `herald-core/src/policy.rs` |
-| Daily budget counts approvals and posts | `autopost_budget_counts_approvals_and_executions_only` | `herald-storage/src/lib.rs` |
-| Posts queue without the lane | `a_post_without_the_autopost_lane_still_queues_an_approval` | `apps/agent/tests/cli.rs` |
+| No posting lane or auto-send | `timeline_target_is_refused_for_every_operation`, `timeline_send_needs_approval_and_never_auto_sends` | `herald-core/src/{action,policy}.rs` |
+| Stale autopost config fails closed | `stale_autopost_config_keys_fail_closed` | `herald-config/src/model.rs` |
+| Post requests are declined, nothing queued | `posting_requests_are_declined_and_nothing_is_queued` | `apps/agent/tests/cli.rs` |
 | Injection stays inert in X pages | `injection_text_stays_inert_data` | `herald-provider/src/x.rs` |
 | X ids cannot steer a URL | `thread_ids_are_validated_before_any_navigation` | `herald-provider/src/x.rs` |
 | X challenge is a hard stop | `health_maps_a_challenge_to_unavailable`, `compose_state_hard_stops_on_a_challenge` | `herald-provider/src/x.rs` |

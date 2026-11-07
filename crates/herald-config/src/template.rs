@@ -17,16 +17,6 @@ allow_send = false
 max_body_chars = 8000
 # How long a pending approval keeps its exact body before it expires.
 approval_ttl_hours = 72
-# Autopost lane: ORIGINAL X posts only. Never DMs, never replies.
-# Off by default. `herald autopost off` is the kill switch.
-# allow_autopost = false
-# Posts per calendar day (UTC), counting manual and autonomous posts.
-# autopost_daily_limit = 5
-# Deterministic quality floor in [0, 10].
-# autopost_min_quality = 7
-# UTC quiet window where autopost is blocked, "HH:MM-HH:MM" (wrap-around
-# allowed, e.g. "22:00-06:00"). Omit to disable.
-# autopost_quiet_hours = "22:00-06:00"
 
 [model]
 # none: rules-only (no process, no model). managed: pinned llama-server.

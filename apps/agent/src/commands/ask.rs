@@ -69,19 +69,13 @@ pub async fn run(
         planner::draft_missing_body(model, &mut plan, instruction).await;
     }
 
-    let wants_post = plan.operation == herald_core::Operation::CreatePost;
     let action = match validate_plan(plan) {
         Ok(action) => action,
         Err(PlanError::ClarificationRequired(question)) => {
             return Ok(clarification(app, "ask", &question));
         }
         Err(PlanError::MissingReplyBody { .. }) => {
-            let question = if wants_post {
-                "What should the post say?"
-            } else {
-                "What should the reply say?"
-            };
-            return Ok(clarification(app, "ask", question));
+            return Ok(clarification(app, "ask", "What should the reply say?"));
         }
         Err(error) => {
             return Err(AppError::new("invalid_plan", error.to_string()));
@@ -90,46 +84,11 @@ pub async fn run(
 
     print_action(app, &action);
 
-    let mut policy = policy(app, enable_send);
-    if model.as_ref().is_some_and(Model::used_fallback) {
-        policy.autopost.enabled = false;
-        app.out
-            .warn("the local fallback model answered; autopost is disabled for this run");
-    }
-    let decision = authorize(&action, &policy);
+    let decision = authorize(&action, &policy(app, enable_send));
 
     match &decision {
         Decision::Allowed => {
             let id = action_id();
-
-            // The autopost lane is the only allowed send; it runs the same
-            // prepare/send/verify path but without an approval.
-            if let Action::Send(send_action) = &action {
-                let outcome = send::execute_autopost_send(app, send_action, &id).await?;
-                app.out.blank();
-                app.out.heading("Autopost");
-                app.out.field("status", outcome.status);
-                if let Some(message_id) = &outcome.message_id {
-                    app.out.field("message", message_id);
-                }
-                app.out.field("detail", &outcome.detail);
-                app.out.data(
-                    "ask",
-                    json!({
-                        "status": if outcome.status == "sent" { "succeeded" } else { outcome.status },
-                        "lane": "autopost",
-                        "action_id": id,
-                        "provider": action.provider(),
-                        "operation": operation_name(&action),
-                        "target": action.target().describe(),
-                        "message_id": outcome.message_id,
-                        "verified": outcome.verified,
-                        "detail": outcome.detail,
-                    }),
-                );
-                return Ok(0);
-            }
-
             send::record_action(app, &action, &id, None)?;
             let outcome = send::execute_allowed(app, &action, &id, model.as_ref()).await?;
             print_outcome(app, &outcome);
@@ -234,31 +193,19 @@ pub async fn dry_run(
         planner::draft_missing_body(model, &mut plan, instruction).await;
     }
 
-    let wants_post = plan.operation == herald_core::Operation::CreatePost;
     let action = match validate_plan(plan) {
         Ok(action) => action,
         Err(PlanError::ClarificationRequired(question)) => {
             return Ok(clarification(app, "plan", &question));
         }
         Err(PlanError::MissingReplyBody { .. }) => {
-            let question = if wants_post {
-                "What should the post say?"
-            } else {
-                "What should the reply say?"
-            };
-            return Ok(clarification(app, "plan", question));
+            return Ok(clarification(app, "plan", "What should the reply say?"));
         }
         Err(error) => return Err(AppError::new("invalid_plan", error.to_string())),
     };
 
     print_action(app, &action);
-    let mut policy = policy(app, enable_send);
-    if model.as_ref().is_some_and(Model::used_fallback) {
-        policy.autopost.enabled = false;
-        app.out
-            .warn("the local fallback model answered; autopost is disabled for this run");
-    }
-    let decision = authorize(&action, &policy);
+    let decision = authorize(&action, &policy(app, enable_send));
 
     let (status, detail) = match &decision {
         Decision::Allowed => ("allowed", "would execute locally".to_string()),

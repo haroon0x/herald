@@ -6,7 +6,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use herald_core::{AutopostPolicy, PolicyConfig, ProviderId};
+use herald_core::{PolicyConfig, ProviderId};
 use serde::{Deserialize, Serialize};
 
 use crate::ConfigError;
@@ -60,22 +60,6 @@ impl Config {
             ));
         }
 
-        if self.policy.autopost_min_quality > 10 {
-            return Err(ConfigError::Invalid(
-                "policy.autopost_min_quality must be between 0 and 10".into(),
-            ));
-        }
-
-        if !(1..=1000).contains(&self.policy.autopost_daily_limit) {
-            return Err(ConfigError::Invalid(
-                "policy.autopost_daily_limit must be between 1 and 1000".into(),
-            ));
-        }
-
-        if let Some(quiet) = &self.policy.autopost_quiet_hours {
-            validate_quiet_hours(quiet)?;
-        }
-
         if self.default_provider == ProviderId::Maildir && self.maildir.is_none() {
             return Err(ConfigError::Invalid(
                 "default_provider = \"maildir\" requires a [maildir] section with a path".into(),
@@ -105,36 +89,6 @@ impl Config {
 
         if let Some(value) = get_env("HERALD_ALLOW_SEND") {
             self.policy.allow_send = parse_bool("HERALD_ALLOW_SEND", &value)?;
-        }
-
-        if let Some(value) = get_env("HERALD_ALLOW_AUTOPOST") {
-            self.policy.allow_autopost = parse_bool("HERALD_ALLOW_AUTOPOST", &value)?;
-        }
-
-        if let Some(value) = get_env("HERALD_AUTOPOST_DAILY_LIMIT") {
-            self.policy.autopost_daily_limit = value
-                .trim()
-                .parse::<u32>()
-                .map_err(|_| ConfigError::Env("HERALD_AUTOPOST_DAILY_LIMIT".into()))?;
-        }
-
-        if let Some(value) = get_env("HERALD_AUTOPOST_MIN_QUALITY") {
-            let quality = value
-                .trim()
-                .parse::<u8>()
-                .map_err(|_| ConfigError::Env("HERALD_AUTOPOST_MIN_QUALITY".into()))?;
-            if quality > 10 {
-                return Err(ConfigError::Env("HERALD_AUTOPOST_MIN_QUALITY".into()));
-            }
-            self.policy.autopost_min_quality = quality;
-        }
-
-        if let Some(value) = get_env("HERALD_AUTOPOST_QUIET_HOURS") {
-            self.policy.autopost_quiet_hours = if value.trim().is_empty() {
-                None
-            } else {
-                Some(value)
-            };
         }
 
         if let Some(value) = get_env("HERALD_MAILDIR_PATH") {
@@ -244,13 +198,6 @@ impl Config {
         PolicyConfig {
             allow_send: self.policy.allow_send,
             max_body_chars: self.policy.max_body_chars,
-            autopost: AutopostPolicy {
-                enabled: self.policy.allow_autopost,
-                daily_limit: self.policy.autopost_daily_limit,
-                min_quality: self.policy.autopost_min_quality,
-                quiet_now: false,
-                remaining_today: self.policy.autopost_daily_limit,
-            },
         }
     }
 
@@ -309,22 +256,6 @@ impl Config {
             "policy.approval_ttl_hours".to_string(),
             self.policy.approval_ttl_hours.to_string(),
         );
-        values.insert(
-            "policy.allow_autopost".to_string(),
-            self.policy.allow_autopost.to_string(),
-        );
-        values.insert(
-            "policy.autopost_daily_limit".to_string(),
-            self.policy.autopost_daily_limit.to_string(),
-        );
-        values.insert(
-            "policy.autopost_min_quality".to_string(),
-            self.policy.autopost_min_quality.to_string(),
-        );
-        if let Some(quiet) = &self.policy.autopost_quiet_hours {
-            values.insert("policy.autopost_quiet_hours".to_string(), quiet.clone());
-        }
-
         if let Some(maildir) = &self.maildir {
             values.insert(
                 "maildir.path".to_string(),
@@ -407,17 +338,6 @@ pub struct PolicySettings {
     pub allow_send: bool,
     pub max_body_chars: usize,
     pub approval_ttl_hours: u64,
-    /// Autopost lane for ORIGINAL X posts only. Never covers DMs or replies.
-    /// Off by default; deliberate reversal of the no-auto-send rule, recorded
-    /// in ADR 0009. `herald autopost off` is the kill switch.
-    pub allow_autopost: bool,
-    /// Posts per calendar day (UTC), counting manual and autonomous posts.
-    pub autopost_daily_limit: u32,
-    /// Deterministic quality floor in `[0, 10]`.
-    pub autopost_min_quality: u8,
-    /// UTC quiet window where autopost is blocked, `"HH:MM-HH:MM"`, wrap-around
-    /// allowed. `None` disables quiet hours.
-    pub autopost_quiet_hours: Option<String>,
 }
 
 impl Default for PolicySettings {
@@ -426,28 +346,8 @@ impl Default for PolicySettings {
             allow_send: false,
             max_body_chars: 8_000,
             approval_ttl_hours: 72,
-            allow_autopost: false,
-            autopost_daily_limit: 5,
-            autopost_min_quality: 7,
-            autopost_quiet_hours: None,
         }
     }
-}
-
-/// Strictly `HH:MM-HH:MM` in 24-hour UTC; wrap-around allowed.
-fn validate_quiet_hours(quiet: &str) -> Result<(), ConfigError> {
-    let (start, end) = parse_quiet_window(quiet).ok_or_else(|| {
-        ConfigError::Invalid(
-            "policy.autopost_quiet_hours must be \"HH:MM-HH:MM\" in 24-hour UTC (e.g. \"22:00-06:00\")"
-                .into(),
-        )
-    })?;
-    if start == end {
-        return Err(ConfigError::Invalid(
-            "policy.autopost_quiet_hours start and end must differ".into(),
-        ));
-    }
-    Ok(())
 }
 
 /// Validate an optional X handle: no whitespace/newlines, at most 16 chars
@@ -468,49 +368,6 @@ fn validate_x_handle(handle: Option<&str>) -> Result<(), ConfigError> {
         ));
     }
     Ok(())
-}
-
-/// Parse `"HH:MM-HH:MM"` into minutes-of-day `(start, end)`, or `None` if
-/// malformed. No trimming, no leniency: embedded or surrounding spaces fail.
-fn parse_quiet_window(quiet: &str) -> Option<(i64, i64)> {
-    let (start, end) = quiet.split_once('-')?;
-    let start = parse_hhmm(start)?;
-    let end = parse_hhmm(end)?;
-    Some((start, end))
-}
-
-fn parse_hhmm(text: &str) -> Option<i64> {
-    let (hours, minutes) = text.split_once(':')?;
-    if hours.len() != 2
-        || minutes.len() != 2
-        || !hours.bytes().all(|b| b.is_ascii_digit())
-        || !minutes.bytes().all(|b| b.is_ascii_digit())
-    {
-        return None;
-    }
-    let hour: i64 = hours.parse().ok()?;
-    let minute: i64 = minutes.parse().ok()?;
-    if hour > 23 || minute > 59 {
-        return None;
-    }
-    Some(hour * 60 + minute)
-}
-
-/// Whether `minutes_since_midnight_utc` is inside the quiet window `[start, end)`.
-///
-/// Input is assumed pre-validated; malformed strings simply return `false`
-/// rather than panicking. Wrap-around (`start > end`) spans midnight.
-#[must_use]
-pub fn quiet_hours_active(quiet_hours: &str, minutes_since_midnight_utc: i64) -> bool {
-    let Some((start, end)) = parse_quiet_window(quiet_hours) else {
-        return false;
-    };
-    let now = minutes_since_midnight_utc;
-    match start.cmp(&end) {
-        std::cmp::Ordering::Less => now >= start && now < end,
-        std::cmp::Ordering::Greater => now >= start || now < end,
-        std::cmp::Ordering::Equal => false,
-    }
 }
 
 /// Local mail configuration.
@@ -896,136 +753,6 @@ mod tests {
     }
 
     #[test]
-    fn valid_quiet_windows_pass_validation() {
-        for quiet in ["22:00-06:00", "08:00-17:00", "00:00-00:01", "23:59-00:00"] {
-            let mut config = Config::default();
-            config.policy.autopost_quiet_hours = Some(quiet.into());
-            config.validate().unwrap();
-        }
-    }
-
-    #[test]
-    fn invalid_quiet_strings_are_rejected() {
-        for quiet in [
-            "",
-            "22:00",
-            "garbage",
-            "22:00-06:00 ",
-            " 22:00-06:00",
-            "22:00 -06:00",
-            "24:00-06:00",
-            "22:60-06:00",
-            "22:00-22:00",
-            "2200-0600",
-            "22:0-06:00",
-            "-22:00",
-        ] {
-            let mut config = Config::default();
-            config.policy.autopost_quiet_hours = Some(quiet.into());
-            let error = config.validate().unwrap_err();
-            assert!(
-                matches!(error, ConfigError::Invalid(_)),
-                "quiet hours {quiet:?} should be rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn quiet_hours_active_truth_table() {
-        // start < end: [start, end) — start inclusive, end exclusive
-        assert!(quiet_hours_active("08:00-17:00", 8 * 60));
-        assert!(quiet_hours_active("08:00-17:00", 12 * 60));
-        assert!(quiet_hours_active("08:00-17:00", 17 * 60 - 1));
-        assert!(!quiet_hours_active("08:00-17:00", 17 * 60));
-        assert!(!quiet_hours_active("08:00-17:00", 7 * 60 + 59));
-
-        // start > end: wraps midnight
-        assert!(quiet_hours_active("22:00-06:00", 22 * 60));
-        assert!(quiet_hours_active("22:00-06:00", 23 * 60));
-        assert!(quiet_hours_active("22:00-06:00", 0));
-        assert!(quiet_hours_active("22:00-06:00", 5 * 60 + 59));
-        assert!(!quiet_hours_active("22:00-06:00", 6 * 60));
-        assert!(!quiet_hours_active("22:00-06:00", 21 * 60 + 59));
-        assert!(!quiet_hours_active("22:00-06:00", 12 * 60));
-
-        // malformed / degenerate input never panics and is never active
-        assert!(!quiet_hours_active("garbage", 12 * 60));
-        assert!(!quiet_hours_active("", 12 * 60));
-        assert!(!quiet_hours_active("08:00-08:00", 8 * 60));
-        assert!(!quiet_hours_active("24:00-06:00", 0));
-    }
-
-    #[test]
-    fn autopost_validation_bounds() {
-        let mut config = Config::default();
-        config.policy.autopost_min_quality = 11;
-        assert!(config.validate().is_err());
-        config.policy.autopost_min_quality = 10;
-        config.validate().unwrap();
-
-        config.policy.autopost_daily_limit = 0;
-        assert!(config.validate().is_err());
-        config.policy.autopost_daily_limit = 1001;
-        assert!(config.validate().is_err());
-        config.policy.autopost_daily_limit = 1000;
-        config.validate().unwrap();
-        config.policy.autopost_daily_limit = 1;
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn policy_maps_autopost_fields_through() {
-        let mut config = Config::default();
-        config.policy.allow_autopost = true;
-        config.policy.autopost_daily_limit = 3;
-        config.policy.autopost_min_quality = 9;
-
-        let policy = config.policy();
-        assert!(policy.autopost.enabled);
-        assert_eq!(policy.autopost.daily_limit, 3);
-        assert_eq!(policy.autopost.min_quality, 9);
-        assert!(!policy.autopost.quiet_now);
-        assert_eq!(policy.autopost.remaining_today, 3);
-    }
-
-    #[test]
-    fn flat_contains_autopost_keys() {
-        let mut config = Config::default();
-        assert!(
-            config
-                .flat()
-                .iter()
-                .any(|(k, _)| k == "policy.allow_autopost")
-        );
-        assert!(
-            config
-                .flat()
-                .iter()
-                .any(|(k, _)| k == "policy.autopost_daily_limit")
-        );
-        assert!(
-            config
-                .flat()
-                .iter()
-                .any(|(k, _)| k == "policy.autopost_min_quality")
-        );
-        assert!(
-            !config
-                .flat()
-                .iter()
-                .any(|(k, _)| k == "policy.autopost_quiet_hours")
-        );
-
-        config.policy.autopost_quiet_hours = Some("22:00-06:00".into());
-        let flat = config.flat();
-        let (_, value) = flat
-            .iter()
-            .find(|(k, _)| k == "policy.autopost_quiet_hours")
-            .unwrap();
-        assert_eq!(value, "22:00-06:00");
-    }
-
-    #[test]
     fn xsettings_serde_defaults() {
         let config: Config = toml::from_str("[x]\n").unwrap();
         let x = config.x.unwrap();
@@ -1119,38 +846,23 @@ mod tests {
     }
 
     #[test]
-    fn autopost_env_overrides_apply() {
-        let mut config = Config::default();
-        config
-            .apply_env(|key| match key {
-                "HERALD_ALLOW_AUTOPOST" => Some("yes".into()),
-                "HERALD_AUTOPOST_DAILY_LIMIT" => Some("7".into()),
-                "HERALD_AUTOPOST_MIN_QUALITY" => Some("8".into()),
-                "HERALD_AUTOPOST_QUIET_HOURS" => Some("22:00-06:00".into()),
-                _ => None,
-            })
-            .unwrap();
-        assert!(config.policy.allow_autopost);
-        assert_eq!(config.policy.autopost_daily_limit, 7);
-        assert_eq!(config.policy.autopost_min_quality, 8);
-        assert_eq!(
-            config.policy.autopost_quiet_hours.as_deref(),
-            Some("22:00-06:00")
-        );
-
-        let mut config = Config::default();
-        config.policy.autopost_quiet_hours = Some("22:00-06:00".into());
-        config
-            .apply_env(|key| (key == "HERALD_AUTOPOST_QUIET_HOURS").then(String::new))
-            .unwrap();
-        assert_eq!(config.policy.autopost_quiet_hours, None);
-
-        let mut config = Config::default();
-        assert!(
-            config
-                .apply_env(|key| (key == "HERALD_AUTOPOST_MIN_QUALITY").then(|| "11".into()))
-                .is_err()
-        );
+    fn stale_autopost_config_keys_fail_closed() {
+        // The autopost lane was removed. A config file that still carries
+        // its keys is rejected outright — Herald never starts with a stale
+        // autonomy flag it no longer understands. The error names the key.
+        for key in [
+            "allow_autopost = true",
+            "autopost_daily_limit = 5",
+            "autopost_min_quality = 7",
+            "autopost_quiet_hours = \"22:00-06:00\"",
+        ] {
+            let text = format!("[policy]\n{key}\n");
+            let error = crate::parse(&text).unwrap_err();
+            assert!(
+                matches!(error, crate::ConfigError::Parse(_)),
+                "{key} should be rejected"
+            );
+        }
     }
 
     #[test]

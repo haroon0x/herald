@@ -35,8 +35,6 @@ herald-ui.service`).
 | Threads | Clicking an item runs `herald thread`; message bodies are untrusted text. |
 | Queue | Pending approvals with the exact body, hash, and expiry. Review opens a confirmation dialog; approve runs `herald approve`, reject runs `herald reject`. |
 | Ask | Runs `herald ask`; “Allow this request to create an approval” maps to `--enable-send`. |
-| Compose | Opens a composer (textarea, 1–280 characters, live counter). “Queue post” runs `herald ask "post exactly:" --body-env HERALD_UI_BODY --enable-send`; the body travels in the child environment, never argv, and an approval is queued — nothing is sent. |
-| Autopost | Shows the rails and writes the kill switch (`herald autopost off`). |
 | Providers | Health table from `herald providers` (X launches a browser; expect a delay). |
 | Filter | Client-side filter over the loaded list; `/` focuses it, `Esc` clears. |
 | Freshness | Approve, reject, reconcile, and ask clear the read cache before reloading. Notifications show unread on the check that finds them, then read on the next check. |
@@ -71,11 +69,11 @@ open a thread that is not cached.
 - Content Security Policy `default-src 'self'`; no inline script, no external
   assets, no telemetry.
 - The server holds no domain logic. Every action is a subprocess of the same
-  CLI, so the approval queue, body hash, autopost rails, and idempotency ledger
-  are identical to the terminal.
+  CLI, so the approval queue, body hash, and idempotency ledger are identical
+  to the terminal.
 - Rendered message content uses `textContent`, never `innerHTML`.
 - Request bodies are capped at 64 KiB and inputs are validated.
-- An integration test starts the real server and checks that the token is required (no token gets a 403), that the page serves the strict CSP, and that the autopost kill switch is written through the API.
+- An integration test starts the real server and checks that the token is required (no token gets a 403), that the page serves the strict CSP, and that removed posting endpoints return an error rather than running a command.
 
 ## Limits
 

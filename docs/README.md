@@ -50,8 +50,9 @@ contract.
 | [0006](decisions/0006-inference-backends.md) | Managed sidecar by default, OpenAI-compatible escape hatch | Accepted |
 | [0007](decisions/0007-browser-automation.md) | No browser automation in v1; `chromiumoxide` is the documented alternative | Accepted |
 | [0008](decisions/0008-x-browser-adapter.md) | X adapter: `chromiumoxide`, dedicated profile, human sign-in, constant selectors | Accepted |
-| [0009](decisions/0009-scoped-autopost.md) | Scoped autopost: original timeline posts only, every rail must pass | Accepted |
+| [0009](decisions/0009-scoped-autopost.md) | Scoped autopost: original timeline posts only, every rail must pass | Superseded by 0011 |
 | [0010](decisions/0010-local-web-ui.md) | Local browser UI over the CLI; Tauri shell later | Accepted |
+| [0011](decisions/0011-no-posting-lane.md) | No posting lane in Herald; Zyquor owns generation and posting | Accepted |
 
 ## Project files
 

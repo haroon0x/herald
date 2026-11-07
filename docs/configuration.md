@@ -130,10 +130,6 @@ typo such as `auto_send = true` fails at load instead of being ignored.
 | `allow_send` | boolean | `false` | `true` | Enables the approval path for sends. Every send still needs `herald approve`. |
 | `max_body_chars` | integer | `8000` | `4000` | 1 to 1,000,000. Over the limit is a policy rejection, not a truncation. |
 | `approval_ttl_hours` | integer | `72` | `24` | 1 to 720. Expired approvals cannot be approved and their bodies are deleted. |
-| `allow_autopost` | boolean | `false` | `true` | Enables the scoped autopost lane. Requires `allow_send` and every rail: kill switch clear, outside quiet hours, budget remaining, quality floor met. Original timeline posts only; never replies or DMs. See [ADR 0009](decisions/0009-scoped-autopost.md). |
-| `autopost_daily_limit` | integer | `5` | `3` | 1 to 1000. Posts per UTC day, counting every `create_post` that reached approval or execution, manual and autonomous. |
-| `autopost_min_quality` | integer | `7` | `8` | 0 to 10. Deterministic quality floor for an autonomous post. Below the floor falls back to approval. |
-| `autopost_quiet_hours` | string | none | `"22:00-06:00"` | UTC window `"HH:MM-HH:MM"` with wrap-around. Start and end must differ. Inside the window nothing autoposts. |
 
 ### `[maildir]`
 
@@ -164,9 +160,8 @@ provider construction, and the Maildir falls back to read-only with a warning.
 It is never a silent unauthenticated send.
 
 When `backend = "opencode"` and a managed GGUF is present, the GGUF is a
-lazy fallback: the sidecar starts only if the provider fails. Any answer that
-came from that fallback disables autopost for the run; the post still queues for
-approval. The managed model is never started just to idle.
+lazy fallback: the sidecar starts only if the provider fails. The managed
+model is never started just to idle.
 
 ### `[x]`
 
@@ -183,13 +178,13 @@ profile. See [providers.md](providers.md#x-browser-adapter) and
 | `action_delay_ms` | integer | `1800` | `2500` | Pause after opening a page, clicking, or submitting. |
 | `typing_delay_ms` | integer | `20` | `35` | Per-character delay while typing into a composer. |
 | `close_after` | boolean | `true` | `false` | Close the browser at the end of each operation. |
-| `read_only` | boolean | `false` | `true` | Refuse every X write, including approved ones; reads keep working. Default is `false`: writes are allowed but still need approval (and autopost is separately off). |
+| `read_only` | boolean | `false` | `true` | Refuse every X write, including approved ones; reads keep working. Default is `false`: writes are allowed but still need approval. |
 
 ### `[model]`
 
 | Key | Type | Default | Example | Notes |
 | --- | --- | --- | --- | --- |
-| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`, `opencode`. Every backend is used for classification, reply/post drafting, and summaries. |
+| `backend` | string | `"none"` | `"managed"` | One of `none`, `managed`, `openai`, `opencode`. Every backend is used for classification, reply drafting, and summaries. |
 | `endpoint` | string | none | `"http://127.0.0.1:11434/v1"` | Required for `openai`. Must be `http://` or `https://`. |
 | `model_name` | string | none | `"qwen3.5:0.8b"` | Required for `openai`; for `opencode` it is the model id (default `opencode/glm-5.3-flash-free`). |
 | `manifest` | path | `<data-dir>/models/manifest.json` | `"~/models/qwen.json"` | Used by `managed`. Relative paths resolve against the data directory. |
@@ -209,10 +204,6 @@ Overrides applied to the configuration:
 | --- | --- | --- |
 | `HERALD_PROVIDER` | `default_provider` | `maildir` |
 | `HERALD_ALLOW_SEND` | `policy.allow_send` | `true`, `1`, `yes`, `on` |
-| `HERALD_ALLOW_AUTOPOST` | `policy.allow_autopost` | `true`, `1`, `yes`, `on` |
-| `HERALD_AUTOPOST_DAILY_LIMIT` | `policy.autopost_daily_limit` | `5` |
-| `HERALD_AUTOPOST_MIN_QUALITY` | `policy.autopost_min_quality` | `7` |
-| `HERALD_AUTOPOST_QUIET_HOURS` | `policy.autopost_quiet_hours` | `22:00-06:00` |
 | `HERALD_X_PROFILE_DIR` | `x.profile_dir` | `/home/you/.local/share/herald/profiles/x` |
 | `HERALD_X_HANDLE` | `x.handle` | `@you` |
 | `HERALD_X_HEADLESS` | `x.headless` | `true` |
@@ -381,17 +372,13 @@ The endpoint can be remote. If it is not loopback, message content leaves the
 machine. `doctor` prints the endpoint so the choice is visible. Herald does not
 send anything to a Herald-operated service under any configuration.
 
-### X with the scoped autopost lane
+### X for replies and DMs
 
 ```toml
 default_provider = "x"
 
 [policy]
 allow_send = true
-allow_autopost = true
-autopost_daily_limit = 3
-autopost_min_quality = 7
-autopost_quiet_hours = "23:00-07:00"
 
 [x]
 handle = "@you"
@@ -399,8 +386,8 @@ headless = true
 close_after = true
 ```
 
-Run `herald x login` once. Posts still need every rail; everything else queues
-an approval exactly as before.
+Run `herald x login` once. Replies and DMs still need `herald approve`;
+there is no posting lane (ADR 0011).
 
 ## Validation
 

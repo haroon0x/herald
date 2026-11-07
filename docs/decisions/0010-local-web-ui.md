@@ -2,6 +2,8 @@
 
 Date: 2026-11-05
 Status: Accepted
+Amended: [0011](0011-no-posting-lane.md) removed the posting endpoints
+(`/api/post`, `/api/autopost`) and the compose panel.
 
 ## Context
 

@@ -139,40 +139,44 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
         ));
     }
 
+    // Health probes run concurrently: a slow provider (a browser launch, a
+    // network timeout) must not hold every other provider hostage. Checks
+    // stay in `ProviderId::ALL` order.
+    let mut provider_futures = Vec::new();
     for id in herald_core::ProviderId::ALL {
-        match app.registry.get(id) {
-            Some(adapter) => {
-                let (level, detail) = match adapter.health().await {
-                    ProviderHealth::Ready => (Level::Ok, "ready".to_string()),
-                    ProviderHealth::NotAuthenticated => {
-                        (Level::Warn, "not authenticated".to_string())
-                    }
-                    ProviderHealth::Unavailable(reason) => (Level::Fail, reason),
-                };
-                checks.push(Check {
-                    level,
-                    name: format!("provider {id}"),
-                    detail,
-                });
-            }
-            None if id.is_implemented() => {
-                if app.config.default_provider == id {
-                    checks.push(Check::fail(
-                        format!("provider {id}"),
-                        "selected as default_provider but not configured",
-                    ));
-                } else {
-                    checks.push(Check::ok(
-                        format!("provider {id}"),
-                        "not configured (optional)",
-                    ));
+        provider_futures.push(async move {
+            let (level, detail) = match app.registry.get(id) {
+                Some(adapter) => {
+                    let (level, detail) = match adapter.health().await {
+                        ProviderHealth::Ready => (Level::Ok, "ready".to_string()),
+                        ProviderHealth::NotAuthenticated => {
+                            (Level::Warn, "not authenticated".to_string())
+                        }
+                        ProviderHealth::Unavailable(reason) => (Level::Fail, reason),
+                    };
+                    (level, detail)
                 }
+                None if id.is_implemented() => {
+                    if app.config.default_provider == id {
+                        (
+                            Level::Fail,
+                            "selected as default_provider but not configured".to_string(),
+                        )
+                    } else {
+                        (Level::Ok, "not configured (optional)".to_string())
+                    }
+                }
+                None => (Level::Ok, "planned; no adapter in this build".to_string()),
+            };
+            Check {
+                level,
+                name: format!("provider {id}"),
+                detail,
             }
-            None => checks.push(Check::ok(
-                format!("provider {id}"),
-                "planned; no adapter in this build",
-            )),
-        }
+        });
+    }
+    for future in provider_futures {
+        checks.push(future.await);
     }
 
     if let Some(maildir) = &app.config.maildir {

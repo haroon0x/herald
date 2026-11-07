@@ -41,7 +41,7 @@ impl ModelManifest {
 }
 
 /// Streaming SHA-256 so a multi-gigabyte model is never loaded into memory.
-pub fn verify_sha256(path: impl AsRef<Path>, expected: &str) -> Result<(), RuntimeError> {
+pub fn sha256_file(path: impl AsRef<Path>) -> Result<String, RuntimeError> {
     let path = path.as_ref();
     let file = File::open(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -63,7 +63,13 @@ pub fn verify_sha256(path: impl AsRef<Path>, expected: &str) -> Result<(), Runti
         hasher.update(&buffer[..read]);
     }
 
-    let actual = format!("{:x}", hasher.finalize());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Hash a file and compare against an expected hex digest.
+pub fn verify_sha256(path: impl AsRef<Path>, expected: &str) -> Result<(), RuntimeError> {
+    let path = path.as_ref();
+    let actual = sha256_file(path)?;
     if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {

@@ -118,12 +118,6 @@ pub struct ProviderMessage {
 #[serde(transparent)]
 pub struct Untrusted<T>(pub T);
 
-impl<T> Untrusted<T> {
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
 impl<T: AsRef<str>> AsRef<str> for Untrusted<T> {
     fn as_ref(&self) -> &str {
         self.0.as_ref()

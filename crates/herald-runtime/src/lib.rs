@@ -36,8 +36,6 @@ pub enum RuntimeError {
     },
     #[error("download failed: HTTP {status} for {url}")]
     DownloadFailed { status: u16, url: String },
-    #[error("the server does not support resumable downloads (range unsupported): {url}")]
-    RangeUnsupported { url: String },
     #[error("the inference server did not become ready in time: {0}")]
     StartupTimeout(String),
     #[error("the inference server returned an invalid response: {0}")]
@@ -48,10 +46,8 @@ pub enum RuntimeError {
     NotConfigured(String),
 }
 
-pub use download::{DownloadStats, download_model, download_url};
-pub use inference::{FallbackInference, Inference, OpenAiClient};
-pub use manifest::ModelManifest;
+pub use download::{DownloadStats, download_model};
+pub use inference::{FallbackInference, Inference, OpenAiClient, slice_json_object};
+pub use manifest::{ModelManifest, sha256_file};
 pub use opencode::OpenCodeInference;
-pub use sidecar::{
-    ChatMessage, LlamaSidecar, SidecarConfig, binary_from_env, free_loopback_port, model_path,
-};
+pub use sidecar::{LlamaSidecar, SidecarConfig};

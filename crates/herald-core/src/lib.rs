@@ -9,16 +9,14 @@ pub mod action;
 pub mod error;
 pub mod intent;
 pub mod policy;
-pub mod prompt;
 pub mod provider;
 pub mod rules;
-pub mod schema;
 pub mod state;
 pub mod time;
 
 pub use action::{
     Action, ActionPlan, DraftAction, Operation, ReadAction, ReadOperation, SendAction, Target,
-    ThreadId, body_hash, validate_plan,
+    ThreadId, body_hash, canonical_body_text, validate_plan,
 };
 pub use error::PlanError;
 pub use policy::{ApprovalRequest, Decision, PolicyConfig, Rejection, authorize};

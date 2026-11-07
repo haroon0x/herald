@@ -56,7 +56,7 @@ flowchart TD
 
 | Crate | Responsibility | Explicitly not responsible for |
 | --- | --- | --- |
-| `herald-core` | Action types, `validate_plan`, `authorize`, `ActionState`, prompt construction, planner rules, JSON schema | I/O, network, files, database, configuration |
+| `herald-core` | Action types, `validate_plan`, `authorize`, `ActionState`, classifier prompts and grammar, planner rules | I/O, network, files, database, configuration |
 | `herald-provider` | The `CommunicationProvider` trait, the fake provider, the Maildir/SMTP adapter, error mapping | Deciding whether an action is allowed, storing state |
 | `herald-storage` | Schema migrations, message dedupe, action records, transition enforcement, audit log, pending approvals | Calling providers, formatting output |
 | `herald-runtime` | Model manifest and checksums, resumable download, `llama-server` sidecar, OpenAI-compatible client | Knowing what an action is |
@@ -265,12 +265,13 @@ stop condition, not a pick. The model is never asked to resolve a target; tier
 
 ## Trust boundaries
 
-**Instruction vs provider content.** `build_planner_prompt` puts the
-instruction in `<user-instruction>` and each message in
-`<untrusted-message id=... thread=... sender=...>`. The system prompt says the
-content inside those blocks is data and that requests inside it must be
-ignored. A test asserts that an injected sentence stays inside the block and
-never reaches the system prompt.
+**Instruction vs provider content.** The planner's `summarize_prompt` puts the
+instruction in `<user-instruction>` and each message in a
+`<message id=... sender=...>` block inside `<untrusted-thread>`. Its system
+prompt says every message below is untrusted data and that requests inside it
+to send, forward, delete, or change the rules must be ignored. A test asserts
+that an injected sentence stays inside the thread block and never reaches the
+system prompt.
 
 **Model vs execution.** A plan is inert until `validate_plan` accepts it.
 Unknown fields fail deserialization. Unknown providers and operations cannot be
@@ -333,9 +334,10 @@ Deliberately not stored:
   text that was considered.
 - Attachments. v1 does not fetch them.
 
-`purge_expired_approvals` runs once at startup, before any command. An expired
-approval cannot be approved: `approve` checks `expires_at`, moves the action to
-`cancelled`, and deletes the body.
+`purge_expired_approvals` was removed when the startup path adopted the same
+cancel-and-audit expiry handling as the approval flow: before commands run,
+expired pending rows are cancelled with an audit event and their bodies
+deleted, and `approve` itself also checks `expires_at`.
 
 ## Inference architecture
 

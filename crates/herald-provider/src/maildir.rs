@@ -27,8 +27,10 @@ use herald_core::{
     Untrusted, body_hash, time::now_ms,
 };
 
+use crate::mail::{normalize_message_id, sender_of};
 use crate::{
     CommunicationProvider, ExecutionReceipt, PreparedAction, ProviderError, ProviderHealth,
+    require_not_empty_body,
 };
 
 /// Files larger than this are ignored rather than loaded into memory.
@@ -346,17 +348,20 @@ impl CommunicationProvider for MaildirProvider {
         &self,
         query: &MessageQuery,
     ) -> Result<Vec<MessageSummary>, ProviderError> {
-        let needle = query.search.as_ref().map(|search| search.to_lowercase());
+        let needle = crate::search_needle(query);
         let mut summaries: Vec<MessageSummary> = self
             .load_inbox()
             .into_iter()
             .filter(|message| !query.unread_only || message.unread)
             .filter(|message| {
-                needle.as_ref().is_none_or(|needle| {
-                    message.sender.to_lowercase().contains(needle)
-                        || message.subject.to_lowercase().contains(needle)
-                        || message.body_text.to_lowercase().contains(needle)
-                })
+                crate::matches_search(
+                    needle.as_ref(),
+                    &[
+                        message.sender.as_str(),
+                        message.subject.as_str(),
+                        message.body_text.as_str(),
+                    ],
+                )
             })
             .map(|message| MessageSummary {
                 id: MessageId::new(message.id),
@@ -373,8 +378,7 @@ impl CommunicationProvider for MaildirProvider {
                 .cmp(&a.timestamp_ms)
                 .then_with(|| a.id.0.cmp(&b.id.0))
         });
-        let limit = if query.limit == 0 { 20 } else { query.limit };
-        summaries.truncate(limit);
+        summaries.truncate(crate::effective_limit(query.limit));
         Ok(summaries)
     }
 
@@ -401,9 +405,7 @@ impl CommunicationProvider for MaildirProvider {
         body: &str,
         client_token: &str,
     ) -> Result<PreparedAction, ProviderError> {
-        if body.trim().is_empty() {
-            return Err(ProviderError::Other("empty reply body".into()));
-        }
+        require_not_empty_body(body, "empty reply body")?;
         // Verify the thread exists without touching the mailbox.
         self.load_thread(id)?;
         Ok(PreparedAction::new(
@@ -542,20 +544,23 @@ impl RawMessage {
     }
 }
 
-fn scan_inbox(root: &Path) -> Vec<RawMessage> {
+fn scan(maildir_root: &Path, sent: bool) -> Vec<RawMessage> {
     let mut by_id: BTreeMap<String, RawMessage> = BTreeMap::new();
-    scan_folder(&root.join("new"), true, false, &mut by_id);
-    scan_folder(&root.join("cur"), false, false, &mut by_id);
+    scan_folder(&maildir_root.join("new"), true, sent, &mut by_id);
+    scan_folder(&maildir_root.join("cur"), false, sent, &mut by_id);
     let mut messages: Vec<RawMessage> = by_id.into_values().collect();
-    assign_thread_ids(&mut messages);
+    if !sent {
+        assign_thread_ids(&mut messages);
+    }
     messages
 }
 
+fn scan_inbox(root: &Path) -> Vec<RawMessage> {
+    scan(root, false)
+}
+
 fn scan_sent(root: &Path) -> Vec<RawMessage> {
-    let mut by_id: BTreeMap<String, RawMessage> = BTreeMap::new();
-    scan_folder(&root.join("new"), true, true, &mut by_id);
-    scan_folder(&root.join("cur"), false, true, &mut by_id);
-    by_id.into_values().collect()
+    scan(root, true)
 }
 
 fn find_token_in_folder(
@@ -679,29 +684,6 @@ fn parse_message_file(path: &Path, metadata: &fs::Metadata, unread: bool) -> Opt
     })
 }
 
-fn sender_of(message: &mail_parser::Message<'_>) -> (String, Option<String>) {
-    let Some(mailbox) = message.from().and_then(|list| list.first()) else {
-        return ("unknown".to_string(), None);
-    };
-
-    let name = mailbox
-        .name()
-        .map(str::trim)
-        .filter(|name| !name.is_empty());
-    let address = mailbox
-        .address()
-        .map(str::trim)
-        .filter(|address| !address.is_empty());
-
-    let display = match (name, address) {
-        (Some(name), Some(address)) => format!("{name} <{address}>"),
-        (Some(name), None) => name.to_string(),
-        (None, Some(address)) => address.to_string(),
-        (None, None) => "unknown".to_string(),
-    };
-    (display, address.map(ToString::to_string))
-}
-
 fn file_mtime_ms(metadata: &fs::Metadata) -> Option<i64> {
     metadata
         .modified()
@@ -715,16 +697,6 @@ fn has_seen_flag(path: &Path) -> bool {
         .and_then(|name| name.to_str())
         .and_then(|name| name.rsplit_once(":2,").or_else(|| name.rsplit_once(";2,")))
         .is_some_and(|(_, flags)| flags.contains('S'))
-}
-
-fn normalize_message_id(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let stripped = trimmed.trim_start_matches('<').trim_end_matches('>').trim();
-    if stripped.is_empty() || stripped.chars().any(char::is_control) {
-        None
-    } else {
-        Some(stripped.to_string())
-    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -921,14 +893,6 @@ fn normalize_newlines(body: &str) -> String {
         .replace('\n', "\r\n")
 }
 
-/// Canonical form used for body-hash comparisons across newline conventions.
-fn canonical_body(body: &str) -> String {
-    body.replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .trim_end_matches('\n')
-        .to_string()
-}
-
 struct OutboundMessage<'a> {
     from_header: &'a str,
     recipient: &'a str,
@@ -1018,7 +982,8 @@ fn verify_sent_file(path: &Path, client_token: &str, body: &str) -> bool {
     if message.token.as_deref() != Some(client_token) {
         return false;
     }
-    body_hash(&canonical_body(&message.body_text)) == body_hash(&canonical_body(body))
+    body_hash(&herald_core::canonical_body_text(&message.body_text))
+        == body_hash(&herald_core::canonical_body_text(body))
 }
 
 fn receipt_for(message: RawMessage, thread: &ThreadId) -> ExecutionReceipt {
@@ -1031,7 +996,7 @@ fn receipt_for(message: RawMessage, thread: &ThreadId) -> ExecutionReceipt {
         provider: ProviderId::Maildir,
         thread_id: thread.clone(),
         provider_message_id: MessageId::new(message.id),
-        body_hash: body_hash(&canonical_body(&message.body_text)),
+        body_hash: body_hash(&herald_core::canonical_body_text(&message.body_text)),
         sent_at_ms,
         verified: true,
     }

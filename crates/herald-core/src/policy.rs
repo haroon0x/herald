@@ -62,13 +62,6 @@ pub enum Decision {
     Rejected(Rejection),
 }
 
-impl Decision {
-    #[must_use]
-    pub const fn is_allowed(&self) -> bool {
-        matches!(self, Self::Allowed)
-    }
-}
-
 /// Apply the approval policy to a validated action.
 ///
 /// Reads and drafts are local and need no approval. Every send queues for a
@@ -131,7 +124,10 @@ mod tests {
 
     #[test]
     fn reads_need_no_approval() {
-        assert!(authorize(&read(), &PolicyConfig::default()).is_allowed());
+        assert!(matches!(
+            authorize(&read(), &PolicyConfig::default()),
+            Decision::Allowed
+        ));
     }
 
     #[test]
@@ -143,7 +139,10 @@ mod tests {
             },
             body: "draft".into(),
         });
-        assert!(authorize(&action, &PolicyConfig::default()).is_allowed());
+        assert!(matches!(
+            authorize(&action, &PolicyConfig::default()),
+            Decision::Allowed
+        ));
     }
 
     #[test]

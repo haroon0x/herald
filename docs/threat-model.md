@@ -49,19 +49,19 @@ classifier or drafter could treat it as a command.
 
 **Controls.**
 
-- Retrieved text is wrapped in `<untrusted-message id=... thread=... sender=...>`
-  blocks. The user's instruction lives in `<user-instruction>`.
+- Retrieved text is wrapped in `<untrusted-thread>` with per-message
+  `<message id=... sender=...>` blocks. The user's instruction lives in
+  `<user-instruction>`.
 - The system prompt states that block content is data and that requests inside
   it must be ignored.
 - The model's only output is a plan. Even a fully compromised plan must pass
   `validate_plan`, target resolution against real provider data, and policy.
 - A send still needs a human approval that shows the body.
 
-**Test.** `injection_stays_inside_untrusted_block`,
-`user_instruction_is_separate_from_context` in `herald-core/src/prompt.rs`;
-`summary_prompt_wraps_every_message_as_untrusted` in
-`apps/agent/src/planner.rs`. Every provider adds a corpus case for body,
-subject, sender, and header injection.
+**Test.** `summary_prompt_wraps_every_message_as_untrusted` in
+`apps/agent/src/planner.rs`; `injection_text_stays_inert_data` in the
+X adapter. Every provider adds a corpus case for body, subject, sender, and
+header injection.
 
 **Residual.** The model can still be persuaded to choose a different
 *operation*, for example summarizing a thread the user did not name. That is a
@@ -415,8 +415,8 @@ the data directory removes everything Herald keeps. See
 | Send disabled by default | `sending_is_disabled_by_default` | `herald-core/src/policy.rs` |
 | Send needs approval | `sending_requires_approval_when_enabled` | `herald-core/src/policy.rs` |
 | Body limit enforced | `overlong_body_is_rejected` | `herald-core/src/policy.rs` |
-| Injection stays data | `injection_stays_inside_untrusted_block` | `herald-core/src/prompt.rs` |
-| Instruction separated | `user_instruction_is_separate_from_context` | `herald-core/src/prompt.rs` |
+| Injection stays data | `summary_prompt_wraps_every_message_as_untrusted` | `apps/agent/src/planner.rs` |
+| Instruction separated | `summary_prompt_wraps_every_message_as_untrusted` | `apps/agent/src/planner.rs` |
 | No illegal transitions | `terminal_states_cannot_move`, `cannot_execute_without_planning` | `herald-core/src/state.rs` |
 | No silent cancel | `executing_cannot_be_cancelled_silently` | `herald-core/src/state.rs` |
 | Uncertain is reconcilable | `uncertain_can_be_reconciled` | `herald-core/src/state.rs` |

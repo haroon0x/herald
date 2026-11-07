@@ -2,15 +2,15 @@
 //! port, startup deadline, clean shutdown on drop.
 
 use std::io::{Read as _, Seek as _, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::time::{Instant, sleep};
 
 use crate::RuntimeError;
+use crate::inference::{chat_completion_body, post_chat_completion, response_format};
 
 /// Configuration for the managed `llama-server` process.
 ///
@@ -89,33 +89,9 @@ fn random_token() -> String {
 
 /// Ask the OS for a free loopback port. Small race window, acceptable for a
 /// local child process started immediately afterwards.
-pub fn free_loopback_port() -> Result<u16, RuntimeError> {
+pub(crate) fn free_loopback_port() -> Result<u16, RuntimeError> {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
     Ok(listener.local_addr()?.port())
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-}
-
-impl ChatMessage {
-    #[must_use]
-    pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: "system".into(),
-            content: content.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: "user".into(),
-            content: content.into(),
-        }
-    }
 }
 
 /// Handle to a running, loopback-only inference server.
@@ -260,34 +236,25 @@ impl LlamaSidecar {
         max_tokens: u16,
         schema: Option<&serde_json::Value>,
     ) -> Result<String, RuntimeError> {
-        let response_format = match schema {
-            None => json!({"type": "json_object"}),
-            Some(schema) => json!({
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "ActionPlan",
-                    "strict": true,
-                    "schema": schema,
-                }
-            }),
-        };
+        // A reasoning model spends its whole budget inside the thinking
+        // block otherwise, so the answer never arrives. This is a template
+        // variable, applied because the sidecar runs with `--jinja`.
+        let body = chat_completion_body(
+            None,
+            system,
+            user,
+            max_tokens,
+            Some(response_format(schema)),
+            Some(json!({"chat_template_kwargs": {"enable_thinking": false}})),
+        );
 
-        let body = json!({
-            "messages": [
-                ChatMessage::system(system),
-                ChatMessage::user(user),
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            // A reasoning model spends its whole budget inside the thinking
-            // block otherwise, so the answer never arrives. This is a template
-            // variable, applied because the sidecar runs with `--jinja`.
-            "chat_template_kwargs": {"enable_thinking": false},
-            "response_format": response_format,
-            "stream": false,
-        });
-
-        self.complete(body).await
+        post_chat_completion(
+            &self.client,
+            &format!("{}/v1/chat/completions", self.endpoint),
+            Some(&self.api_key),
+            &body,
+        )
+        .await
     }
 
     /// Send a plain-text chat completion and return the assistant text.
@@ -300,43 +267,22 @@ impl LlamaSidecar {
         user: &str,
         max_tokens: u16,
     ) -> Result<String, RuntimeError> {
-        let body = json!({
-            "messages": [
-                ChatMessage::system(system),
-                ChatMessage::user(user),
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "chat_template_kwargs": {"enable_thinking": false},
-            "stream": false,
-        });
+        let body = chat_completion_body(
+            None,
+            system,
+            user,
+            max_tokens,
+            None,
+            Some(json!({"chat_template_kwargs": {"enable_thinking": false}})),
+        );
 
-        self.complete(body).await
-    }
-
-    /// Post one chat-completion body and extract the assistant text.
-    async fn complete(&self, body: Value) -> Result<String, RuntimeError> {
-        let response = self
-            .client
-            .post(format!("{}/v1/chat/completions", self.endpoint))
-            .bearer_auth(&self.api_key)
-            .json(&body)
-            .send()
-            .await?;
-
-        let status = response.status();
-        let raw = response.text().await?;
-        if !status.is_success() {
-            return Err(RuntimeError::BadResponse(format!("{status}: {raw}")));
-        }
-
-        let parsed: Value = serde_json::from_str(&raw)
-            .map_err(|error| RuntimeError::BadResponse(format!("{error}: {raw}")))?;
-
-        parsed["choices"][0]["message"]["content"]
-            .as_str()
-            .map(ToString::to_string)
-            .ok_or_else(|| RuntimeError::BadResponse("missing assistant content".into()))
+        post_chat_completion(
+            &self.client,
+            &format!("{}/v1/chat/completions", self.endpoint),
+            Some(&self.api_key),
+            &body,
+        )
+        .await
     }
 
     /// Terminate the child, reap it, and drop its stderr file.
@@ -351,12 +297,6 @@ impl Drop for LlamaSidecar {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-/// Resolve the llama-server binary from `HERALD_LLAMA_SERVER` or a path.
-#[must_use]
-pub fn binary_from_env() -> Option<PathBuf> {
-    std::env::var_os("HERALD_LLAMA_SERVER").map(PathBuf::from)
 }
 
 /// Find an executable by name on `PATH`, so a normal `llama-server` install
@@ -374,12 +314,6 @@ pub fn find_in_paths(name: &str, paths: impl IntoIterator<Item = PathBuf>) -> Op
         .into_iter()
         .map(|directory| directory.join(name))
         .find(|candidate| candidate.is_file())
-}
-
-/// Where downloaded models live for a given data directory.
-#[must_use]
-pub fn model_path(data_dir: &Path, filename: &str) -> PathBuf {
-    data_dir.join("models").join(filename)
 }
 
 #[cfg(test)]

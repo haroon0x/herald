@@ -8,6 +8,8 @@ pub mod imap;
 pub mod maildir;
 pub mod x;
 
+pub(crate) mod mail;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -98,6 +100,48 @@ pub enum ProviderError {
     Unsupported,
     #[error("provider failure: {0}")]
     Other(String),
+}
+
+/// Reject an empty reply body at the provider boundary.
+///
+/// Every writable provider shares this fail-closed guard; the error message
+/// is the only provider-specific part.
+pub(crate) fn require_not_empty_body(
+    body: &str,
+    error_message: impl Into<String>,
+) -> Result<(), ProviderError> {
+    if body.trim().is_empty() {
+        return Err(ProviderError::Other(error_message.into()));
+    }
+    Ok(())
+}
+
+/// The lowercased search needle, if any.
+///
+/// Blank searches are treated as no search rather than a filter that matches
+/// nothing. Callers compute it once per query instead of repeating the
+/// lowercasing for every message.
+pub(crate) fn search_needle(query: &MessageQuery) -> Option<String> {
+    query
+        .search
+        .as_deref()
+        .map(str::to_ascii_lowercase)
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// Whether a message matches the search needle across sender, subject, and
+/// body text. `None` matches everything.
+pub(crate) fn matches_search(needle: Option<&String>, fields: &[&str]) -> bool {
+    needle.is_none_or(|needle| {
+        fields
+            .iter()
+            .any(|field| field.to_ascii_lowercase().contains(needle))
+    })
+}
+
+/// The effective per-query limit. Zero means the default page size.
+pub(crate) fn effective_limit(limit: usize) -> usize {
+    if limit == 0 { 20 } else { limit }
 }
 
 /// The complete capability surface a provider may expose.

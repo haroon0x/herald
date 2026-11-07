@@ -11,7 +11,7 @@ use herald_config::{Config, ModelBackend};
 use herald_core::{ActionPlan, Operation, ProviderId, Thread, rules};
 use herald_runtime::{
     FallbackInference, Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference,
-    SidecarConfig,
+    SidecarConfig, slice_json_object,
 };
 
 use crate::cli::EngineArg;
@@ -373,51 +373,7 @@ fn parse_classifier(raw: &str) -> Result<Classification, anyhow::Error> {
 /// Find the first substring that parses as a JSON object, ignoring fences and
 /// prose around it.
 pub fn json_slice(raw: &str) -> Option<&str> {
-    for (start, character) in raw.char_indices() {
-        if character != '{' {
-            continue;
-        }
-        if let Some(end) = object_end(&raw[start..]) {
-            let candidate = &raw[start..start + end];
-            if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-fn object_end(raw: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-
-    for (offset, character) in raw.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else {
-                match character {
-                    '\\' => escaped = true,
-                    '"' => in_string = false,
-                    _ => {}
-                }
-            }
-        } else {
-            match character {
-                '"' => in_string = true,
-                '{' => depth += 1,
-                '}' => {
-                    if depth == 1 {
-                        return Some(offset + character.len_utf8());
-                    }
-                    depth -= 1;
-                }
-                _ => {}
-            }
-        }
-    }
-    None
+    slice_json_object(raw)
 }
 
 #[cfg(test)]

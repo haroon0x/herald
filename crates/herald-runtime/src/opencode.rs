@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::RuntimeError;
 use crate::inference::Inference;
+use crate::{RuntimeError, inference::slice_json_object};
 
 /// Default one-shot budget, matching the other backends.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -129,13 +129,14 @@ impl Inference for OpenCodeInference {
     ) -> Result<String, RuntimeError> {
         let prompt = format!("{system}\n\n{user}\n\nReply with one JSON object and nothing else.");
         let raw = self.run(&prompt).await?;
-        let json = slice_json_object(&strip_opencode_banner(&raw)).ok_or_else(|| {
+        let stripped = strip_opencode_banner(&raw);
+        let json = slice_json_object(&stripped).ok_or_else(|| {
             RuntimeError::ModelProcess("opencode did not return a JSON object".into())
         })?;
-        serde_json::from_str::<Value>(&json).map_err(|error| {
+        serde_json::from_str::<Value>(json).map_err(|error| {
             RuntimeError::ModelProcess(format!("opencode returned invalid JSON: {error}"))
         })?;
-        Ok(json)
+        Ok(json.to_string())
     }
 
     async fn complete_text(
@@ -161,7 +162,7 @@ impl Inference for OpenCodeInference {
 /// Only a leading block of `>`-prefixed lines is removed, so a model answer
 /// that happens to quote a prompt is not touched.
 #[must_use]
-pub fn strip_opencode_banner(raw: &str) -> String {
+fn strip_opencode_banner(raw: &str) -> String {
     let mut lines = raw.lines().peekable();
     while lines
         .peek()
@@ -174,17 +175,6 @@ pub fn strip_opencode_banner(raw: &str) -> String {
         rest.remove(0);
     }
     rest.trim_end().to_string()
-}
-
-/// The first `{` through the last `}` of a model answer.
-#[must_use]
-pub fn slice_json_object(raw: &str) -> Option<String> {
-    let start = raw.find('{')?;
-    let end = raw.rfind('}')?;
-    if end <= start {
-        return None;
-    }
-    raw.get(start..=end).map(str::to_string)
 }
 
 fn tail(value: &str, limit: usize) -> String {
@@ -219,7 +209,7 @@ mod tests {
     #[test]
     fn json_object_is_sliced_out_of_chatter() {
         assert_eq!(
-            slice_json_object("Sure! {\"operation\":\"get_thread\"} thanks").as_deref(),
+            slice_json_object("Sure! {\"operation\":\"get_thread\"} thanks"),
             Some("{\"operation\":\"get_thread\"}")
         );
         assert_eq!(slice_json_object("no json here"), None);

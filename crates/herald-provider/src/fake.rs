@@ -21,6 +21,7 @@ use herald_core::{
 
 use crate::{
     CommunicationProvider, ExecutionReceipt, PreparedAction, ProviderError, ProviderHealth,
+    require_not_empty_body,
 };
 
 #[derive(Debug, Clone)]
@@ -205,6 +206,7 @@ impl CommunicationProvider for FakeProvider {
         query: &MessageQuery,
     ) -> Result<Vec<MessageSummary>, ProviderError> {
         self.ensure_signed_in()?;
+        let needle = crate::search_needle(query);
         let threads = self.threads.lock().unwrap();
 
         let mut summaries: Vec<MessageSummary> = threads
@@ -212,12 +214,14 @@ impl CommunicationProvider for FakeProvider {
             .flat_map(|thread| thread.messages.iter())
             .filter(|message| !query.unread_only || message.unread)
             .filter(|message| {
-                query.search.as_deref().is_none_or(|needle| {
-                    let needle = needle.to_lowercase();
-                    message.subject.to_lowercase().contains(&needle)
-                        || message.sender.to_lowercase().contains(&needle)
-                        || message.body.as_ref().to_lowercase().contains(&needle)
-                })
+                crate::matches_search(
+                    needle.as_ref(),
+                    &[
+                        message.subject.as_str(),
+                        message.sender.as_str(),
+                        message.body.as_ref(),
+                    ],
+                )
             })
             .map(|message| MessageSummary {
                 id: message.id.clone(),
@@ -230,8 +234,7 @@ impl CommunicationProvider for FakeProvider {
             .collect();
 
         summaries.sort_by_key(|summary| std::cmp::Reverse(summary.timestamp_ms));
-        let limit = if query.limit == 0 { 20 } else { query.limit };
-        summaries.truncate(limit);
+        summaries.truncate(crate::effective_limit(query.limit));
         Ok(summaries)
     }
 
@@ -255,9 +258,7 @@ impl CommunicationProvider for FakeProvider {
         client_token: &str,
     ) -> Result<PreparedAction, ProviderError> {
         self.ensure_signed_in()?;
-        if body.trim().is_empty() {
-            return Err(ProviderError::Other("empty reply body".into()));
-        }
+        require_not_empty_body(body, "empty reply body")?;
         let threads = self.threads.lock().unwrap();
         if !threads.contains_key(id.as_str()) {
             return Err(ProviderError::NotFound);

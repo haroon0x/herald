@@ -25,8 +25,6 @@ one concept:
 | `intent` | Tiered planner prompts | `classifier_system()`, `classifier_schema()`, `draft_system()` | The prompt+grammar pair must stay in lockstep (field order is load-bearing); the tests assert they agree. |
 | `provider` | Provider-facing types: closed `ProviderId`, `MessageScope`, `MessageQuery`, `Untrusted<T>` | Types only; `ProviderId::as_str`/`is_implemented` | The closed enum is the rule "a model cannot invent a provider". `MessageQuery::recent/unread/scoped` are the one obvious shapes. |
 | `state` | The action state machine | `ActionState`, `can_transition` | Terminal rules exist in exactly one place; storage enforces them too. |
-| `prompt` | Injection-safe prompt assembly | `build_*` helpers | Message text enters prompts as data blocks here and nowhere else. |
-| `schema` | The JSON Schema the model output is constrained to | `action_plan_schema()` | Kept aligned with the classifier schema by test. |
 | `error` | `PlanError` taxonomy | Error enum | Callers map policy/validation errors without string parsing. |
 | `time` | `now_ms()` | One function | The one place wall-clock enters core — keeping core deterministic otherwise. |
 
@@ -52,8 +50,8 @@ is ~15 small methods on one `Store` type — the CLI never builds SQL.
 
 Why it stays: the state machine is enforced at the storage layer, so a bug
 in the CLI cannot mark an unapproved send `succeeded`; and expired approvals
-are purged (and bodies deleted) by a single query (`purge_expired_approvals`)
-called at startup. Deleting it would scatter SQL and state rules across the
+are cancelled and their bodies deleted by the same cancel-and-audit path
+before commands run. Deleting it would scatter SQL and state rules across the
 CLI.
 
 ## `herald-runtime` — the model, three backends

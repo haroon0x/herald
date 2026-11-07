@@ -127,6 +127,8 @@ impl Store {
         Self::from_connection(conn)
     }
 
+    #[cfg(test)]
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self, StorageError> {
         Self::from_connection(Connection::open_in_memory()?)
     }
@@ -362,15 +364,6 @@ impl Store {
         Ok(deleted == 1)
     }
 
-    /// Drop approvals past their deadline. Returns how many bodies were deleted.
-    pub fn purge_expired_approvals(&self, now_ms: i64) -> Result<usize, StorageError> {
-        let deleted = self.conn.execute(
-            "DELETE FROM pending_approvals WHERE expires_at <= ?1",
-            params![now_ms],
-        )?;
-        Ok(deleted)
-    }
-
     pub fn approval_count(&self) -> Result<usize, StorageError> {
         let count: i64 =
             self.conn
@@ -423,26 +416,6 @@ impl Store {
             events.push(event?);
         }
         Ok(events)
-    }
-
-    pub fn set_preference(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.conn.execute(
-            "INSERT INTO preferences (key, value) VALUES (?1, ?2)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![key, value],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_preference(&self, key: &str) -> Result<Option<String>, StorageError> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT value FROM preferences WHERE key = ?1",
-                params![key],
-                |row| row.get(0),
-            )
-            .optional()?)
     }
 }
 
@@ -645,17 +618,6 @@ mod tests {
         assert_eq!(store.audit_count().unwrap(), 1);
     }
 
-    #[test]
-    fn preferences_round_trip() {
-        let store = Store::open_in_memory().unwrap();
-        assert_eq!(store.get_preference("allow_send").unwrap(), None);
-        store.set_preference("allow_send", "false").unwrap();
-        assert_eq!(
-            store.get_preference("allow_send").unwrap().as_deref(),
-            Some("false")
-        );
-    }
-
     fn approval(action_id: &str, expires_at_ms: i64) -> PendingApproval {
         PendingApproval {
             action_id: action_id.into(),
@@ -720,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn expired_approvals_are_purged_and_bodies_disappear() {
+    fn expired_approvals_are_cancelled_by_the_app_and_bodies_deleted() {
         let store = Store::open_in_memory().unwrap();
         pending_action(&store, "old");
         pending_action(&store, "fresh");
@@ -729,7 +691,14 @@ mod tests {
             .create_approval(&approval("fresh", now_ms() + 60_000))
             .unwrap();
 
-        assert_eq!(store.purge_expired_approvals(now_ms()).unwrap(), 1);
+        let expired: Vec<_> = store
+            .pending_approvals()
+            .unwrap()
+            .into_iter()
+            .filter(|approval| approval.expires_at_ms <= now_ms())
+            .collect();
+        assert_eq!(expired.len(), 1);
+        assert_eq!(store.cancel_action("old").unwrap(), ActionState::Cancelled);
         assert!(store.get_approval("old").unwrap().is_none());
         assert!(store.get_approval("fresh").unwrap().is_some());
     }

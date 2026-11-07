@@ -21,7 +21,7 @@ pub struct DownloadStats {
 
 /// A pinned model source on Hugging Face.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelSource {
+pub(crate) struct ModelSource {
     pub repo: String,
     pub revision: String,
     pub filename: String,
@@ -45,7 +45,7 @@ fn part_path(dest: &Path) -> std::path::PathBuf {
 
 /// Download `url` into `dest`, resuming from `<dest>.part` when possible.
 /// Progress is `(bytes_so_far, bytes_total)`.
-pub async fn download_url(
+pub(crate) async fn download_url(
     client: &reqwest::Client,
     url: &str,
     dest: &Path,

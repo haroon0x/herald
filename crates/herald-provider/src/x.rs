@@ -42,21 +42,26 @@ use herald_core::{
 
 use crate::{
     CommunicationProvider, ExecutionReceipt, PreparedAction, ProviderError, ProviderHealth,
+    require_not_empty_body,
 };
 
 /// How long a page is given to render a selector before the operation fails.
 const PAGE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Budget for a health probe only. A check command must answer in seconds,
+/// not load a page as patiently as a read does; reads and writes keep the
+/// full `PAGE_TIMEOUT` and one re-navigation on a slow render.
+pub(crate) const HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// X home timeline. The authenticated landing page.
-pub const HOME_URL: &str = "https://x.com/home";
+pub(crate) const HOME_URL: &str = "https://x.com/home";
 /// Mentions tab, used for the public side of the inbox.
-pub const MENTIONS_URL: &str = "https://x.com/notifications/mentions";
+pub(crate) const MENTIONS_URL: &str = "https://x.com/notifications/mentions";
 /// Direct-message list.
-pub const MESSAGES_URL: &str = "https://x.com/messages";
+pub(crate) const MESSAGES_URL: &str = "https://x.com/messages";
 /// All notifications (mentions live on their own tab).
-pub const NOTIFICATIONS_URL: &str = "https://x.com/notifications";
+pub(crate) const NOTIFICATIONS_URL: &str = "https://x.com/notifications";
 /// Login entry point. Only `login` navigates here.
-pub const LOGIN_URL: &str = "https://x.com/login";
+pub(crate) const LOGIN_URL: &str = "https://x.com/login";
 
 /// One tweet in a public conversation, or one reply under it.
 const SEL_TWEET_ARTICLE: &str = r#"article[data-testid="tweet"]"#;
@@ -181,7 +186,7 @@ pub trait XClient: Send {
 
 /// A parsed public tweet (mention, reply, or original post).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XItem {
+pub(crate) struct XItem {
     pub id: MessageId,
     pub thread_id: ThreadId,
     pub sender: String,
@@ -352,6 +357,29 @@ impl XProvider {
         Ok(client)
     }
 
+    /// The client for a health probe: shorter render budget, no re-navigation.
+    /// A check command probes every configured provider serially; it must
+    /// answer in seconds per provider, not wait out the full read budget.
+    async fn ensure_probe_client<'a>(
+        &self,
+        slot: &'a mut Option<Box<dyn XClient>>,
+    ) -> Result<&'a mut Box<dyn XClient>, ProviderError> {
+        if slot.is_none() {
+            let client = ChromeClient::launch_with_budget(
+                &self.config,
+                self.config.headless,
+                HEALTH_TIMEOUT,
+                false,
+            )
+            .await?;
+            *slot = Some(Box::new(client));
+        }
+        let Some(client) = slot.as_mut() else {
+            return Err(ProviderError::Other("browser client vanished".into()));
+        };
+        Ok(client)
+    }
+
     async fn release(&self, slot: &mut Option<Box<dyn XClient>>) {
         if self.config.close_after
             && let Some(mut client) = slot.take()
@@ -427,7 +455,7 @@ impl XProvider {
     }
 
     async fn health_inner(&self, slot: &mut Option<Box<dyn XClient>>) -> Result<(), ProviderError> {
-        let client = self.ensure_client(slot).await?;
+        let client = self.ensure_probe_client(slot).await?;
         client.open(HOME_URL).await?;
         let state = parse_compose_state(&client.html().await?)?;
         if state.authenticated {
@@ -490,12 +518,8 @@ impl XProvider {
         };
 
         let seen = self.read_seen();
-        let search = query
-            .search
-            .as_deref()
-            .map(str::to_ascii_lowercase)
-            .filter(|value| !value.trim().is_empty());
-        let limit = if query.limit == 0 { 20 } else { query.limit };
+        let search = crate::search_needle(query);
+        let limit = crate::effective_limit(query.limit);
 
         let mut summaries = Vec::new();
         for item in items {
@@ -503,12 +527,15 @@ impl XProvider {
             if query.unread_only && !unread {
                 continue;
             }
-            if let Some(search) = &search {
-                let haystack = format!("{}\n{}\n{}", item.sender, item.subject, item.body.as_ref())
-                    .to_ascii_lowercase();
-                if !haystack.contains(search) {
-                    continue;
-                }
+            if !crate::matches_search(
+                search.as_ref(),
+                &[
+                    item.sender.as_str(),
+                    item.subject.as_str(),
+                    item.body.as_ref(),
+                ],
+            ) {
+                continue;
             }
             summaries.push(MessageSummary {
                 id: item.id,
@@ -621,11 +648,7 @@ impl XProvider {
                 "x.read_only is enabled; X writes are disabled".into(),
             ));
         }
-        if body.trim().is_empty() {
-            return Err(ProviderError::Other(
-                "refusing to prepare an empty X body".into(),
-            ));
-        }
+        require_not_empty_body(body, "refusing to prepare an empty X body")?;
         let target = resolve_target(id)?;
         // Verification needs an identity to match the posted message against.
         self.require_handle()?;
@@ -962,7 +985,7 @@ async fn verify_signed_in(config: &XConfig) -> Result<(), ProviderError> {
 // ---------------------------------------------------------------------------
 
 /// Parse the mentions tab into public items. Newest first is the caller's job.
-pub fn parse_mentions(html: &str) -> Result<Vec<XItem>, ProviderError> {
+pub(crate) fn parse_mentions(html: &str) -> Result<Vec<XItem>, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     guard_page(&doc)?;
     let articles = selector(SEL_TWEET_ARTICLE)?;
@@ -985,7 +1008,7 @@ pub fn parse_mentions(html: &str) -> Result<Vec<XItem>, ProviderError> {
 /// Notifications are not conversations. When one carries an underlying status
 /// the thread id points at that status; otherwise it is a display-only
 /// `notification:<hash>` id that `get_thread` will refuse.
-pub fn parse_notifications(html: &str) -> Result<Vec<XItem>, ProviderError> {
+pub(crate) fn parse_notifications(html: &str) -> Result<Vec<XItem>, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     guard_page(&doc)?;
     let cells = selector(SEL_NOTIFICATION)?;
@@ -1089,7 +1112,7 @@ fn short_hash(value: &str) -> String {
 /// Parse the home timeline. Promoted or truncated cards without a status
 /// permalink are skipped rather than invented; a page with no timeline at all
 /// is still a layout failure.
-pub fn parse_feed(html: &str) -> Result<Vec<XItem>, ProviderError> {
+pub(crate) fn parse_feed(html: &str) -> Result<Vec<XItem>, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     guard_page(&doc)?;
     let articles = selector(SEL_TWEET_ARTICLE)?;
@@ -1111,7 +1134,7 @@ pub fn parse_feed(html: &str) -> Result<Vec<XItem>, ProviderError> {
 }
 
 /// Parse one public conversation (root tweet plus replies).
-pub fn parse_tweet_thread(html: &str) -> Result<Vec<XItem>, ProviderError> {
+pub(crate) fn parse_tweet_thread(html: &str) -> Result<Vec<XItem>, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     guard_page(&doc)?;
     let articles = selector(SEL_TWEET_ARTICLE)?;
@@ -1129,7 +1152,7 @@ pub fn parse_tweet_thread(html: &str) -> Result<Vec<XItem>, ProviderError> {
 
 /// Parse the DM list. Each conversation is summarised as one item; the thread
 /// id is the conversation, so a reload does not create duplicate messages.
-pub fn parse_dm_list(html: &str) -> Result<Vec<XItem>, ProviderError> {
+pub(crate) fn parse_dm_list(html: &str) -> Result<Vec<XItem>, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     guard_page(&doc)?;
     let conversations = selector(SEL_DM_CONVERSATION)?;
@@ -1170,7 +1193,7 @@ pub fn parse_dm_list(html: &str) -> Result<Vec<XItem>, ProviderError> {
 ///
 /// `self_handle` marks messages as our own; grouped messages omit the avatar,
 /// so the previous sender carries over.
-pub fn parse_dm_thread(
+pub(crate) fn parse_dm_thread(
     html: &str,
     conversation_id: &str,
     self_handle: Option<&str>,
@@ -1209,7 +1232,7 @@ pub fn parse_dm_thread(
 /// A challenge or rate limit is an error, never a state the provider works
 /// around. A signed-out page is a state, not an error, so the caller can report
 /// `NotAuthenticated`.
-pub fn parse_compose_state(html: &str) -> Result<ComposeState, ProviderError> {
+pub(crate) fn parse_compose_state(html: &str) -> Result<ComposeState, ProviderError> {
     let doc = scraper::Html::parse_document(html);
     match detect_blocker(&doc) {
         Some(PageBlocker::LoggedOut) => Ok(ComposeState {
@@ -1354,11 +1377,7 @@ fn status_id_from_href(href: &str) -> Option<String> {
 }
 
 fn same_body(page_text: &str, body: &str) -> bool {
-    canonical_text(page_text) == canonical_text(body)
-}
-
-fn canonical_text(value: &str) -> String {
-    value.replace("\r\n", "\n").trim_end().to_string()
+    herald_core::canonical_body_text(page_text) == herald_core::canonical_body_text(body)
 }
 
 fn is_own(sender: &str, handle: &str) -> bool {
@@ -1633,10 +1652,25 @@ struct ChromeClient {
     handler: tokio::task::JoinHandle<()>,
     action_delay_ms: u64,
     typing_delay_ms: u64,
+    page_timeout: Duration,
+    retry_render: bool,
 }
 
 impl ChromeClient {
     async fn launch(config: &XConfig, headless: bool) -> Result<Self, ProviderError> {
+        Self::launch_with_budget(config, headless, PAGE_TIMEOUT, true).await
+    }
+
+    /// Launch with an explicit render budget. The health probe uses a shorter
+    /// one with no retry: a check must answer fast, and re-navigating inside a
+    /// probe only measures the page twice. Reads and writes keep the full
+    /// `PAGE_TIMEOUT` and one re-navigation on a slow render.
+    async fn launch_with_budget(
+        config: &XConfig,
+        headless: bool,
+        page_timeout: Duration,
+        retry_render: bool,
+    ) -> Result<Self, ProviderError> {
         ensure_dedicated_profile(&config.profile_dir)?;
         // A Chrome that just exited (often the sign-in window) can still hold
         // the profile for a moment. Launching into that race resets the CDP
@@ -1685,6 +1719,8 @@ impl ChromeClient {
             handler,
             action_delay_ms: config.action_delay_ms,
             typing_delay_ms: config.typing_delay_ms,
+            page_timeout,
+            retry_render,
         })
     }
 
@@ -1743,8 +1779,8 @@ impl XClient for ChromeClient {
             if html.trim().len() > 512 && (url_changed || html_changed) {
                 break;
             }
-            if started.elapsed() >= PAGE_TIMEOUT {
-                if retried {
+            if started.elapsed() >= self.page_timeout {
+                if retried || !self.retry_render {
                     return Err(ProviderError::Timeout);
                 }
                 retried = true;

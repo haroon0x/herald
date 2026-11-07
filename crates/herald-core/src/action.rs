@@ -274,6 +274,20 @@ pub fn body_hash(body: &str) -> String {
     format!("{digest:x}")
 }
 
+/// Canonical form for provider-side body verification.
+///
+/// Providers can see the same text with different newline conventions after
+/// a round trip. Normalize CRLF/CR to LF and drop trailing whitespace so
+/// `body_hash` comparisons are stable across those conventions.
+#[must_use]
+pub fn canonical_body_text(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim_end()
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +416,12 @@ mod tests {
                 "{operation} must refuse the timeline target"
             );
         }
+    }
+
+    #[test]
+    fn canonical_body_text_normalizes_line_endings() {
+        assert_eq!(canonical_body_text("hello\r\nworld\r\n\n"), "hello\nworld");
+        assert_eq!(canonical_body_text("hello\rworld\n"), "hello\nworld");
     }
 
     #[test]

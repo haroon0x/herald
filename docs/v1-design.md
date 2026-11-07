@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
 ```
 
 API: `create_approval`, `get_approval`, `pending_approvals`, `delete_approval`,
-`purge_expired_approvals`, `get_action`, `recent_audit`, `cancel_action`.
+`cancel_action`, `get_action`, `recent_audit`.
 `StoredMessage` conversion must take the provider from the caller, never
 hardcode `Fake`.
 

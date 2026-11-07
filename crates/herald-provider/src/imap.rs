@@ -35,10 +35,10 @@ use herald_core::{
     Untrusted,
 };
 
+use crate::mail::{normalize_message_id, sender_of};
 use crate::{
     CommunicationProvider, ExecutionReceipt, PreparedAction, ProviderError, ProviderHealth,
 };
-
 /// A connected IMAP stream. The blanket impl exists because `Box<dyn Read +
 /// Write + Send>` is not a legal trait object (`Send` is an auto trait); this
 /// helper trait names the one shape the session accepts.
@@ -180,28 +180,19 @@ impl CommunicationProvider for ImapProvider {
             })
             .await?;
 
-        let search = query
-            .search
-            .as_deref()
-            .map(str::to_ascii_lowercase)
-            .filter(|value| !value.trim().is_empty());
+        let search = crate::search_needle(query);
         messages.retain(|message| {
             if query.unread_only && !message.unread {
                 return false;
             }
-            if let Some(search) = &search {
-                let haystack = format!(
-                    "{}\n{}\n{}",
-                    message.sender,
-                    message.subject,
-                    message.id.as_str()
-                )
-                .to_ascii_lowercase();
-                if !haystack.contains(search) {
-                    return false;
-                }
-            }
-            true
+            crate::matches_search(
+                search.as_ref(),
+                &[
+                    message.sender.as_str(),
+                    message.subject.as_str(),
+                    message.id.as_str(),
+                ],
+            )
         });
 
         messages.sort_by(|left, right| {
@@ -485,29 +476,6 @@ fn parse_header(raw: &[u8]) -> Option<ImapMessage> {
     })
 }
 
-fn sender_of(message: &mail_parser::Message<'_>) -> (String, Option<String>) {
-    let Some(mailbox) = message.from().and_then(|list| list.first()) else {
-        return ("unknown".to_string(), None);
-    };
-
-    let name = mailbox
-        .name()
-        .map(str::trim)
-        .filter(|name| !name.is_empty());
-    let address = mailbox
-        .address()
-        .map(str::trim)
-        .filter(|address| !address.is_empty());
-
-    let display = match (name, address) {
-        (Some(name), Some(address)) => format!("{name} <{address}>"),
-        (Some(name), None) => name.to_string(),
-        (None, Some(address)) => address.to_string(),
-        (None, None) => "unknown".to_string(),
-    };
-    (display, address.map(ToString::to_string))
-}
-
 /// First text/plain part of a full message, bounded. HTML-only mail yields
 /// an empty body, never markup presented as text.
 fn extract_body(raw: &[u8]) -> String {
@@ -524,16 +492,6 @@ fn extract_body(raw: &[u8]) -> String {
         text.chars().take(MAX_BODY_BYTES).collect()
     } else {
         text
-    }
-}
-
-fn normalize_message_id(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let stripped = trimmed.trim_start_matches('<').trim_end_matches('>').trim();
-    if stripped.is_empty() || stripped.chars().any(char::is_control) {
-        None
-    } else {
-        Some(stripped.to_string())
     }
 }
 

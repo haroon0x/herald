@@ -1,13 +1,11 @@
 //! `herald model` — download, verify, pin, and inspect the model artifact.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use herald_config::ModelBackend;
-use herald_runtime::ModelManifest;
+use herald_runtime::{ModelManifest, sha256_file};
 
 use crate::app::App;
 use crate::error::AppError;
@@ -171,7 +169,7 @@ pub fn pin(
         )));
     }
 
-    let sha256 = sha256_file(file)?;
+    let sha256 = sha256_file(file).map_err(|error| AppError::new("io", error.to_string()))?;
     let size_bytes = std::fs::metadata(file)
         .map_err(|error| AppError::new("io", error.to_string()))?
         .len();
@@ -228,23 +226,6 @@ fn model_file(app: &App, manifest: &ModelManifest) -> PathBuf {
     } else {
         app.models_dir.join(path)
     }
-}
-
-fn sha256_file(path: &Path) -> Result<String, AppError> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|error| AppError::new("io", format!("opening {}: {error}", path.display())))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| AppError::new("io", error.to_string()))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn truncate_hash(hash: &str) -> String {

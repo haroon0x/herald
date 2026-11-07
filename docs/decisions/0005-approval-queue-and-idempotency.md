@@ -40,7 +40,8 @@ the provider, the resolved thread, the exact body, the hash, and the expiry.
 `approve` loads the row by id; nothing else calls `send_reply`.
 
 The body is retained only until the decision. `approve` and `reject` delete it,
-and `purge_expired_approvals` removes rows whose `expires_at` has passed. The
+and at startup expired pending rows are expired by the same cancel-and-audit path the
+`approve` flow uses. The
 hash stays in the `actions` table as `content_hash`, so the audit trail still
 records what was approved without keeping the text.
 

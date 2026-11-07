@@ -7,6 +7,7 @@
 //! the client only ever talks to the URL the user configured, and no telemetry
 //! or message content is written to logs.
 
+use std::future::Future;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -20,6 +21,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// How much of an error response is echoed back in an error message.
 const MAX_ERROR_BODY_CHARS: usize = 500;
+type CompletionFuture<'a> =
+    std::pin::Pin<Box<dyn Future<Output = Result<String, RuntimeError>> + Send + 'a>>;
 
 /// A model that can answer JSON-constrained and plain-text completions.
 ///
@@ -98,6 +101,24 @@ impl FallbackInference {
             .get_or_try_init(|| async { LlamaSidecar::start(&self.fallback_config).await })
             .await
     }
+
+    async fn run_with_fallback<'a, F>(
+        &'a self,
+        primary: CompletionFuture<'a>,
+        fallback_fn: F,
+    ) -> Result<String, RuntimeError>
+    where
+        F: FnOnce(&'a LlamaSidecar) -> CompletionFuture<'a>,
+    {
+        match primary.await {
+            Ok(answer) => Ok(answer),
+            Err(primary_error) => {
+                tracing::warn!(%primary_error, "primary model failed; starting local fallback");
+                let fallback = self.fallback().await?;
+                fallback_fn(fallback).await
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -109,20 +130,17 @@ impl Inference for FallbackInference {
         max_tokens: u16,
         schema: Option<&serde_json::Value>,
     ) -> Result<String, RuntimeError> {
-        match self
-            .primary
-            .complete_json(system, user, max_tokens, schema)
-            .await
-        {
-            Ok(answer) => Ok(answer),
-            Err(primary_error) => {
-                tracing::warn!(%primary_error, "primary model failed; starting local fallback");
-                self.fallback()
-                    .await?
-                    .complete_json(system, user, max_tokens, schema)
-                    .await
-            }
-        }
+        self.run_with_fallback(
+            Box::pin(self.primary.complete_json(system, user, max_tokens, schema)),
+            |fallback| {
+                Box::pin(async move {
+                    fallback
+                        .complete_json(system, user, max_tokens, schema)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     async fn complete_text(
@@ -131,16 +149,13 @@ impl Inference for FallbackInference {
         user: &str,
         max_tokens: u16,
     ) -> Result<String, RuntimeError> {
-        match self.primary.complete_text(system, user, max_tokens).await {
-            Ok(answer) => Ok(answer),
-            Err(primary_error) => {
-                tracing::warn!(%primary_error, "primary model failed; starting local fallback");
-                self.fallback()
-                    .await?
-                    .complete_text(system, user, max_tokens)
-                    .await
-            }
-        }
+        self.run_with_fallback(
+            Box::pin(self.primary.complete_text(system, user, max_tokens)),
+            |fallback| {
+                Box::pin(async move { fallback.complete_text(system, user, max_tokens).await })
+            },
+        )
+        .await
     }
 }
 
@@ -217,55 +232,13 @@ impl OpenAiClient {
     /// Build the common request shape. Callers add `response_format` only when
     /// they actually want JSON.
     fn chat_body(&self, system: &str, user: &str, max_tokens: u16) -> Value {
-        json!({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "stream": false,
-        })
+        chat_completion_body(Some(&self.model), system, user, max_tokens, None, None)
     }
 
     /// Post one chat-completion body and extract the assistant text.
     async fn complete(&self, body: &Value) -> Result<String, RuntimeError> {
         let url = format!("{}/chat/completions", self.base_url);
-        let mut request = self.client.post(url).json(body);
-        if let Some(api_key) = &self.api_key {
-            request = request.bearer_auth(api_key);
-        }
-
-        let response = request.send().await?;
-        let status = response.status();
-        let raw = response.text().await?;
-
-        if !status.is_success() {
-            return Err(RuntimeError::BadResponse(format!(
-                "HTTP {status}: {}",
-                body_snippet(&raw)
-            )));
-        }
-
-        let parsed: Value = serde_json::from_str(&raw).map_err(|error| {
-            RuntimeError::BadResponse(format!(
-                "invalid completion JSON ({error}): {}",
-                body_snippet(&raw)
-            ))
-        })?;
-
-        parsed
-            .get("choices")
-            .and_then(Value::as_array)
-            .and_then(|choices| choices.first())
-            .and_then(|choice| choice.get("message"))
-            .and_then(|message| message.get("content"))
-            .and_then(Value::as_str)
-            .map(ToString::to_string)
-            .ok_or_else(|| {
-                RuntimeError::BadResponse("completion response is missing assistant content".into())
-            })
+        post_chat_completion(&self.client, &url, self.api_key.as_deref(), body).await
     }
 }
 
@@ -278,22 +251,14 @@ impl Inference for OpenAiClient {
         max_tokens: u16,
         schema: Option<&serde_json::Value>,
     ) -> Result<String, RuntimeError> {
-        let response_format = match schema {
-            None => json!({"type": "json_object"}),
-            Some(schema) => json!({
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "ActionPlan",
-                    "strict": true,
-                    "schema": schema,
-                }
-            }),
-        };
-
-        let mut body = self.chat_body(system, user, max_tokens);
-        if let Some(object) = body.as_object_mut() {
-            object.insert("response_format".into(), response_format);
-        }
+        let body = chat_completion_body(
+            Some(&self.model),
+            system,
+            user,
+            max_tokens,
+            Some(crate::inference::response_format(schema)),
+            None,
+        );
 
         self.complete(&body).await
     }
@@ -307,6 +272,171 @@ impl Inference for OpenAiClient {
         let body = self.chat_body(system, user, max_tokens);
         self.complete(&body).await
     }
+}
+
+/// The shared chat-completions request shape.
+///
+/// The sidecar (managed `llama-server`) and `OpenAiClient` are both
+/// OpenAI-compatible endpoints despite being configured differently: both
+/// send a system/user pair with deterministic decoding and no streaming.
+/// `enable_thinking` is a template variable for the sidecar; the gateway
+/// clients never set it.
+pub(crate) fn chat_completion_body(
+    model: Option<&str>,
+    system: &str,
+    user: &str,
+    max_tokens: u16,
+    response_format: Option<Value>,
+    extra: Option<Value>,
+) -> Value {
+    let mut body = match model {
+        Some(model) => json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "stream": false,
+        }),
+        None => json!({
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "stream": false,
+        }),
+    };
+    if let Some(object) = body.as_object_mut() {
+        if let Some(response_format) = response_format {
+            object.insert("response_format".into(), response_format);
+        }
+        if let Some(Value::Object(extra)) = extra {
+            for (key, value) in extra {
+                object.insert(key, value);
+            }
+        }
+    }
+    body
+}
+
+/// JSON-mode response format. `None` asks for a plain JSON object; `Some`
+/// asks for a schema-constrained object named `ActionPlan`.
+pub(crate) fn response_format(schema: Option<&Value>) -> Value {
+    match schema {
+        None => json!({"type": "json_object"}),
+        Some(schema) => json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ActionPlan",
+                "strict": true,
+                "schema": schema,
+            }
+        }),
+    }
+}
+
+/// Post one chat-completion body and extract `choices[0].message.content`.
+/// Shared by the sidecar and `OpenAiClient` so network, error, and parsing
+/// policy live in one place.
+pub(crate) async fn post_chat_completion(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    body: &Value,
+) -> Result<String, RuntimeError> {
+    let mut request = client.post(url).json(body);
+    if let Some(api_key) = api_key {
+        request = request.bearer_auth(api_key);
+    }
+    post_chat_completion_request(request).await
+}
+
+async fn post_chat_completion_request(
+    request: reqwest::RequestBuilder,
+) -> Result<String, RuntimeError> {
+    let response = request.send().await?;
+    let status = response.status();
+    let raw = response.text().await?;
+    if !status.is_success() {
+        return Err(RuntimeError::BadResponse(format!(
+            "HTTP {status}: {}",
+            body_snippet(&raw)
+        )));
+    }
+    let parsed: Value = serde_json::from_str(&raw).map_err(|error| {
+        RuntimeError::BadResponse(format!(
+            "invalid completion JSON ({error}): {}",
+            body_snippet(&raw)
+        ))
+    })?;
+    parsed
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            RuntimeError::BadResponse("completion response is missing assistant content".into())
+        })
+}
+
+/// Find the first JSON object in model prose, precisely handling braces that
+/// appear inside strings and escaped quotes.
+///
+/// The opener must be a `{` byte; the matching `}` is found by tracking
+/// object depth and string state. The substring is still untrusted — callers
+/// parse and validate it.
+pub fn slice_json_object(raw: &str) -> Option<&str> {
+    for (start, character) in raw.char_indices() {
+        if character != '{' {
+            continue;
+        }
+        if let Some(end) = json_object_end(&raw[start..]) {
+            let candidate = &raw[start..start + end];
+            if serde_json::from_str::<Value>(candidate).is_ok() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn json_object_end(raw: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, character) in raw.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else {
+                match character {
+                    '\\' => escaped = true,
+                    '"' => in_string = false,
+                    _ => {}
+                }
+            }
+        } else {
+            match character {
+                '"' => in_string = true,
+                '{' => depth += 1,
+                '}' => {
+                    if depth == 1 {
+                        return Some(offset + character.len_utf8());
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 /// Validate and normalise a configured endpoint.

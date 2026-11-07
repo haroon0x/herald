@@ -16,44 +16,48 @@ struct Row {
 }
 
 pub async fn run(app: &App) -> Result<u8, AppError> {
-    let mut rows = Vec::new();
-
+    // Health checks run concurrently: a slow provider (a browser launch, a
+    // network timeout) must not hold the others hostage. Rows stay in
+    // `ProviderId::ALL` order.
+    let mut futures = Vec::new();
     for id in ProviderId::ALL {
-        let is_default = id == app.config.default_provider;
-        match app.registry.get(id) {
-            Some(adapter) => {
-                let (status, detail) = match adapter.health().await {
-                    ProviderHealth::Ready => ("ready", "adapter available".to_string()),
-                    ProviderHealth::NotAuthenticated => (
-                        "not authenticated",
-                        "sign in or configure credentials".to_string(),
-                    ),
-                    ProviderHealth::Unavailable(reason) => ("unavailable", reason),
-                };
-                rows.push(Row {
-                    id,
-                    status,
-                    detail,
-                    is_default,
-                });
-            }
-            None if id.is_implemented() => {
-                rows.push(Row {
+        futures.push(async move {
+            let is_default = id == app.config.default_provider;
+            match app.registry.get(id) {
+                Some(adapter) => {
+                    let (status, detail) = match adapter.health().await {
+                        ProviderHealth::Ready => ("ready", "adapter available".to_string()),
+                        ProviderHealth::NotAuthenticated => (
+                            "not authenticated",
+                            "sign in or configure credentials".to_string(),
+                        ),
+                        ProviderHealth::Unavailable(reason) => ("unavailable", reason),
+                    };
+                    Row {
+                        id,
+                        status,
+                        detail,
+                        is_default,
+                    }
+                }
+                None if id.is_implemented() => Row {
                     id,
                     status: "not configured",
                     detail: "adapter exists but is not configured; run `herald init`".to_string(),
                     is_default,
-                });
-            }
-            None => {
-                rows.push(Row {
+                },
+                None => Row {
                     id,
                     status: "planned",
                     detail: "no adapter in this build; plans are inert".to_string(),
                     is_default,
-                });
+                },
             }
-        }
+        });
+    }
+    let mut rows = Vec::with_capacity(futures.len());
+    for future in futures {
+        rows.push(future.await);
     }
 
     app.out.line(format!(

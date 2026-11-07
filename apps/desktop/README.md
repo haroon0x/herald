@@ -12,8 +12,11 @@ which the herald workspace's CI does not install.
 ## Build prerequisites (Linux)
 
 ```bash
-sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+sudo apt install libwebkit2gtk-4.1-dev librsvg2-dev patchelf
 ```
+
+No tray is used, so no appindicator package is needed. Verified building on
+Ubuntu 24.04 with rustc 1.99.
 
 ## Run (development)
 

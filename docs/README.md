@@ -19,6 +19,8 @@ know where everything is, see [../index.md](../index.md) first.
 | 9 | [roadmap.md](roadmap.md) | What shipped, what comes next, and the ladder for model authority. |
 | 10 | [decisions/](decisions/) | Why each load-bearing choice was made. |
 | 11 | [status-2026-11-03.md](status-2026-11-03.md) | A historical snapshot of what was measured on that date. Not current. |
+| 12 | [system.md](system.md) | The runtime view: processes, data flows, storage, failure modes. |
+| 13 | [modules.md](modules.md) | What each module owns, its interface, and why it earns its place. |
 
 ## By task
 

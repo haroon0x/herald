@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="assets/mascot.svg" width="160" alt="Herald mascot">
+</p>
+
+<p align="center">
   <img src="assets/logo.svg" width="112" alt="Herald logo">
 </p>
 
@@ -298,8 +302,6 @@ index.md                 repo map and working standards (agents start here)
 v1.0 ships the demo and Maildir providers, the approval queue, reconciliation, configuration, JSON output, and both inference backends. The X adapter is in progress on top of v1.0 (ADR 0008) as a communication channel only: mentions, DMs, feed, notifications, and approval-gated replies/DMs. It has no posting lane (ADR 0011). Next: IMAP read-only (v1.1), richer summaries and search (v1.2), packaging for Homebrew, Scoop, and Debian (v1.3), then a capped multi-step tool loop and a desktop surface.
 
 The ladder from "Rust decides everything" to "the model proposes, Rust disposes" is documented, with measured numbers, in [docs/roadmap.md](docs/roadmap.md).
-
-<p align="center"><img src="assets/mascot.svg" width="88" alt="Herald, the messenger owl"><br><em>Herald keeps watch. You decide what leaves.</em></p>
 
 ## License
 

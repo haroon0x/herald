@@ -213,8 +213,7 @@ proposes, Rust disposes, the user approves.
 
 ### Next: 2/10
 
-Recorded 2026-11-04. Schema, prompt, parsing, and tests are in place; the
-measurement is not started. The change is small and measurable.
+Recorded 2026-11-04 and measured 2026-11-07. Schema, prompt, parsing, and tests are in place; the measurement is recorded below, and the go/no-go decision remains step 6.
 
 `classifier_schema()` grew from two fields to four: `target` (a human phrase,
 never an id) and `question` (empty when not asking).
@@ -238,53 +237,37 @@ Steps:
    back, a model-authored question reaches `PlanError::ClarificationRequired`,
    and a question on a false flag is discarded.
 4. [x] `target_contains` cases in `eval/commands.json`. The harness reports the
-   field for five sampled cases; a wider human review is still pending. The
+   field for five sampled cases, and a wider human review is recorded in
+   [target-review-2026-11-07.md](target-review-2026-11-07.md). The
    harness now builds its plan through `planner::plan_from_classification`, so
    the phrase it scores is the model's, not the regex's.
-5. Measure: no regression against the 42-case baseline, 20 targets read by a human,
-   and a count of cases where the model's target beats the regex.
-6. Go/no-go for 3/10.
+5. [x] Measure: **34/42** against the 32/42 baseline; **11/20** reviewed rules
+   targets were marked specific; and the classifier target **beats the regex
+   in 13** cases, ties in 6, and is worse in 1.
+6. [] Go/no-go for 3/10.
 
-Measured 2026-11-04 on the pinned Qwen3.5-0.8B (`llama-server` build 12098,
-CPU, 4 threads): 26/45, all 45 answers parsed, no retries, 216 s. That is below
-the 32/42 v1.0 baseline, so the gate stays open.
+Measured 2026-11-07 with the user's configured opencode backend: **34/42**
+against the **32/42** baseline. In the fixed 20-case review, **11 of 20**
+rules targets were marked specific and 9 were vague; the model target beats
+the rules hint in **13** cases, ties in **6**, and is worse in **1**. See
+[target-review-2026-11-07.md](target-review-2026-11-07.md). Step 6 remains
+the owner's call.
 
-The failure mode changed. The flag no longer collapses: there is one false
-positive, and three of the eleven clarification cases are caught. In that
-historical 45-case set, the removed `create_post` operation was read as a reply
-or a draft, and `inject-follow-instructions` plans a send. Of the five
-`target_contains` cases, the three that reached target scoring matched; the
-other two failed on the operation before the phrase was compared. Those cases
-were removed when the posting lane was deleted (ADR 0011); the same model
-measurement is not comparable to the current 42-case set.
-
-Getting to that number took a plumbing fix, and it belongs in the result. The
-sidecar started `llama-server` without `--jinja` and never turned thinking off,
-so the model spent each request's 512-token budget inside its reasoning block
-and returned empty `content`. The schema constrained nothing, 6 of the first 21
-cases failed to parse, and every parse failure was retried with an identical
-temperature-0 request, which could only reproduce itself. On the same machine
-the fix takes one classify from ~50 s with no JSON to ~3 s with a schema-valid
-object.
-
-Decoding is ~23 tokens per second here (2 physical cores, 2 threads matches 4
-threads; more oversubscribes and is slower), so one case costs ~2.4 s of
-generation. The score is limited by the model, not by the harness.
-
-An earlier attempt through a local `qwen2.5:0.5b` is kept only as a parser data
-point: 11/45, with the flag collapsing to `true` on 32 of 34
-non-clarification cases.
-
-The gate stays open: the score regressed against the v1.0 baseline, and the
-20-target human review is still pending.
+The earlier 0.8B measurement remains part of the historical context: the
+sidecar needed `--jinja` and thinking-off plumbing so grammar-constrained
+outputs could arrive, and the pinned model regressed against the v1.0
+baseline at the time. Those details are retained in the target-review record
+and the earlier measurement notes; this step measures no planner or core
+behavior change.
 
 Gate before 3/10, all four:
 
 - No regression on the 42-case classifier score.
 - [x] `target_contains` is reported by the harness for the sampled cases.
 - At least 70% of 20 sampled targets are specific enough for the draft prompt.
+  (11/20 recorded; the threshold judgment is the owner's call.)
 - At least 3 cases where the model beats the regex, meaning requests with no
-  " from " phrase.
+  " from " phrase. (13 recorded.)
 
 If the last two fail on the 0.8B, upgrade the model before 3/10 rather than
 tuning the prompt.

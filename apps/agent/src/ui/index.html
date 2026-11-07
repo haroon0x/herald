@@ -13,36 +13,45 @@
     <aside class="rail">
       <header class="masthead">
         <h1>Herald</h1>
+        <p class="masthead-sub">Local-first dispatch</p>
         <div class="rule"><span></span></div>
       </header>
 
-      <nav class="scopes" aria-label="Read scope">
-        <button class="scope is-active" data-scope="all"><span>All</span><em id="count-all"></em></button>
-        <button class="scope" data-scope="feed"><span>Feed</span><em id="count-feed"></em></button>
-        <button class="scope" data-scope="mentions"><span>Mentions</span><em id="count-mentions"></em></button>
-        <button class="scope" data-scope="notifications"><span>Notifications</span><em id="count-notifications"></em></button>
-      </nav>
+      <div class="rail-group">
+        <p class="rail-eyebrow">Scopes</p>
+        <nav class="scopes" aria-label="Read scope">
+          <button class="scope is-active" data-scope="all" aria-current="true"><span>All</span><em id="count-all"></em></button>
+          <button class="scope" data-scope="feed"><span>Feed</span><em id="count-feed"></em></button>
+          <button class="scope" data-scope="mentions"><span>Mentions</span><em id="count-mentions"></em></button>
+          <button class="scope" data-scope="notifications"><span>Notifications</span><em id="count-notifications"></em></button>
+        </nav>
+      </div>
 
-      <label class="field">
-        <span>Provider</span>
-        <select id="provider">
-          <option value="x">x</option>
-          <option value="imap">imap</option>
-          <option value="fake">fake</option>
-          <option value="maildir">maildir</option>
-        </select>
-      </label>
+      <div class="rail-group">
+        <label class="field">
+          <span>Provider</span>
+          <select id="provider" aria-label="Provider">
+            <option value="x">x</option>
+            <option value="imap">imap</option>
+            <option value="fake">fake</option>
+            <option value="maildir">maildir</option>
+          </select>
+        </label>
+      </div>
 
-      <div class="rail-actions">
-        <button class="ghost" id="refresh" type="button">Refresh</button>
-        <button class="ghost" id="providers" type="button">Providers</button>
+      <div class="rail-group">
+        <p class="rail-eyebrow">Actions</p>
+        <div class="rail-actions">
+          <button class="ghost" id="refresh" type="button">Refresh</button>
+          <button class="ghost" id="providers" type="button">Providers</button>
+        </div>
       </div>
 
       <footer class="rail-foot">
         <span id="cfg-path">config: …</span>
         <span class="tiny">Nothing sends without approval.</span>
-        <span class="tiny" title="j/k move · Enter open · / filter · r refresh · q queue">
-          <kbd>j</kbd><kbd>k</kbd> <kbd>↵</kbd> <kbd>/</kbd> <kbd>r</kbd>
+        <span class="tiny" title="j/k move · Enter open · / filter · r refresh · q queue · h history · t thread">
+          <kbd>j</kbd><kbd>k</kbd> <kbd>↵</kbd> <kbd>/</kbd> <kbd>r</kbd> <kbd>q</kbd> <kbd>h</kbd> <kbd>t</kbd>
         </span>
       </footer>
     </aside>
@@ -64,14 +73,17 @@
       <div class="columns">
         <section class="list-pane" aria-label="Messages">
           <div class="list-tools">
-            <input
-              id="filter"
-              class="filter"
-              type="search"
-              placeholder="Filter loaded items"
-              aria-label="Filter loaded items"
-              autocomplete="off"
-            />
+            <label class="filter-field">
+              <span class="filter-icon" aria-hidden="true">⌕</span>
+              <input
+                id="filter"
+                class="filter"
+                type="search"
+                placeholder="Filter loaded items"
+                aria-label="Filter loaded items"
+                autocomplete="off"
+              />
+            </label>
             <span class="shortcut" id="list-count">0</span>
           </div>
           <div id="list" class="list" aria-live="polite"></div>
@@ -79,31 +91,34 @@
 
         <section class="detail-pane" aria-label="Detail">
           <div class="tabs" role="tablist">
-            <button class="tab is-active" id="tab-thread" data-tab="thread" role="tab">Thread</button>
-            <button class="tab" id="tab-queue" data-tab="queue" role="tab">Queue <em id="queue-count">0</em></button>
-            <button class="tab" id="tab-history" data-tab="history" role="tab">History</button>
+            <button class="tab is-active" id="tab-thread" data-tab="thread" role="tab" aria-selected="true" aria-controls="thread-view">Thread</button>
+            <button class="tab" id="tab-queue" data-tab="queue" role="tab" aria-selected="false" aria-controls="queue-view">Queue <em id="queue-count">0</em></button>
+            <button class="tab" id="tab-history" data-tab="history" role="tab" aria-selected="false" aria-controls="history-view">History</button>
           </div>
 
-          <div class="tabbody" id="thread-view">
+          <div class="tabbody" id="thread-view" role="tabpanel">
             <div class="empty">
-              <div class="empty-mark">§</div>
+              <div class="empty-mark" aria-hidden="true">§</div>
               <h3>Pick a dispatch</h3>
               <p>Select a message to read the thread. Bodies are untrusted text; Herald never treats them as instructions.</p>
             </div>
           </div>
 
-          <div class="tabbody is-hidden" id="queue-view">
+          <div class="tabbody is-hidden" id="queue-view" role="tabpanel">
             <div id="queue" class="queue"></div>
           </div>
 
-          <div class="tabbody is-hidden" id="history-view">
+          <div class="tabbody is-hidden" id="history-view" role="tabpanel">
             <div id="history" class="history"></div>
           </div>
         </section>
       </div>
 
       <form class="ask" id="ask" autocomplete="off">
-        <label class="ask-label" for="instruction">Ask Herald</label>
+        <div class="ask-head">
+          <label class="ask-label" for="instruction">Ask Herald</label>
+          <span class="ask-hint"><kbd>⌘</kbd><kbd>↵</kbd> to run</span>
+        </div>
         <div class="ask-row">
           <textarea id="instruction" rows="1" placeholder="read my mentions · summarize the latest from the founder"></textarea>
           <button class="run" type="submit">Run</button>
@@ -121,8 +136,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <dialog id="approve-dialog">
-      <form method="dialog" class="dialog-card">
-        <div class="kicker">Irreversible</div>
+      <form method="dialog" class="dialog-card is-approve">
+        <div class="kicker kicker-danger">Irreversible — approval required</div>
         <h3>Send exactly this body?</h3>
         <p class="dialog-target" id="dialog-target"></p>
         <pre class="dialog-body" id="dialog-body"></pre>
@@ -138,7 +153,7 @@
     </dialog>
 
     <dialog id="providers-dialog">
-      <div class="dialog-card">
+      <div class="dialog-card is-providers">
         <div class="kicker">Health</div>
         <h3>Providers</h3>
         <div id="providers-list" class="providers"></div>

@@ -154,7 +154,10 @@
       button.type = "button";
       button.dataset.id = item.id;
       if (item.unread) button.classList.add("is-unread");
-      if (state.selected === item.id) button.classList.add("is-selected");
+      if (state.selected === item.id) {
+        button.classList.add("is-selected");
+        button.setAttribute("aria-current", "true");
+      }
       if (index === state.cursor) button.classList.add("is-cursor");
 
       button.append(el("span", "dot"));
@@ -471,6 +474,8 @@
     event.preventDefault();
     const instruction = $("instruction").value.trim();
     if (!instruction) return;
+    const runButton = document.querySelector("#ask .run");
+    if (runButton) runButton.disabled = true;
     setStatus("Planning…", true);
     try {
       const data = await api("/api/ask", {
@@ -490,6 +495,8 @@
     } catch (error) {
       setStatus("Plan failed");
       toast(error.message, true);
+    } finally {
+      if (runButton) runButton.disabled = false;
     }
   }
 
@@ -520,6 +527,9 @@
     $("tab-thread").classList.toggle("is-active", tab === "thread");
     $("tab-queue").classList.toggle("is-active", tab === "queue");
     $("tab-history").classList.toggle("is-active", tab === "history");
+    $("tab-thread").setAttribute("aria-selected", String(tab === "thread"));
+    $("tab-queue").setAttribute("aria-selected", String(tab === "queue"));
+    $("tab-history").setAttribute("aria-selected", String(tab === "history"));
     $("thread-view").classList.toggle("is-hidden", tab !== "thread");
     $("queue-view").classList.toggle("is-hidden", tab !== "queue");
     $("history-view").classList.toggle("is-hidden", tab !== "history");
@@ -528,8 +538,12 @@
   function bind() {
     document.querySelectorAll(".scope").forEach((button) => {
       button.addEventListener("click", () => {
-        document.querySelectorAll(".scope").forEach((other) => other.classList.remove("is-active"));
+        document.querySelectorAll(".scope").forEach((other) => {
+          other.classList.remove("is-active");
+          other.removeAttribute("aria-current");
+        });
         button.classList.add("is-active");
+        button.setAttribute("aria-current", "true");
         state.scope = button.dataset.scope;
         $("scope-title").textContent = scopeTitles[state.scope];
         $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;
@@ -626,6 +640,10 @@
         $("ask").requestSubmit();
       }
     });
+
+    $("enable-send").addEventListener("change", (event) => {
+      $("ask").classList.toggle("is-armed", event.target.checked);
+    });
   }
 
   async function boot() {
@@ -634,7 +652,10 @@
     const select = $("provider");
     select.value = state.provider;
     document.querySelectorAll(".scope").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.scope === state.scope);
+      const active = button.dataset.scope === state.scope;
+      button.classList.toggle("is-active", active);
+      if (active) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
     });
     $("scope-title").textContent = scopeTitles[state.scope];
     $("scope-kicker").textContent = state.scope === "all" ? "inbox" : state.scope;

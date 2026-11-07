@@ -1,4 +1,5 @@
 /target
+/apps/desktop/target
 /data
 # Local Cargo home used for offline/sandboxed builds.
 /.cargo-home/

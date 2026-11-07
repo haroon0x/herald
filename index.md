@@ -27,6 +27,7 @@ posting lane and no auto-send. Nothing sends itself.
 | Path | What it is | Responsibility |
 | --- | --- | --- |
 | `apps/agent/` | `herald` CLI and `herald ui` | Argument parsing, the execution loop, human/JSON output, exit codes, and the loopback UI server. Owns **no domain rules**. |
+| `apps/desktop/` | Tauri v2 shell (separate workspace) | Spawns `herald ui --port 0` and shows its token'd page in a WebView. Links WebKitGTK on Linux; kept out of the main workspace so CI needs no system GUI libraries. |
 
 ### Libraries
 

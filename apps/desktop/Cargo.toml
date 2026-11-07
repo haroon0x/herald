@@ -1,0 +1,18 @@
+[package]
+name = "herald-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+description = "Tauri desktop shell for Herald: wraps `herald ui` in a WebView"
+
+# Own workspace on purpose: the shell links WebKitGTK (Linux) and must not be
+# part of the herald workspace, whose CI builds without system GUI libraries.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

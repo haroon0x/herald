@@ -45,7 +45,8 @@ measure operation selection on the 42-case set, not mail quality.
 | Qwen3.5-0.8B, shipped flag-first prompt | 32/42 |
 | Clarification recall, original schema | 0/10 |
 | Clarification recall, flag-first schema | 10/10 loose rule, 4/10 with the specified rule and one false positive |
-| Test suite | 161 tests in the v1.0 tree; 62 at the 2026-11-03 snapshot |
+| opencode free pool (glm, `--engine model`), 2026-11-07 | 35/42 (83%); fails lean `prepare_reply` where `send_reply` was expected |
+| Test suite | 231 tests now; 161 in the v1.0 tree; 62 at the 2026-11-03 snapshot |
 
 Two scorer bugs were fixed before those numbers were trusted: a decline was
 being counted as a clarification, and a model error was being scored as a

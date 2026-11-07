@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="token" content="__TOKEN__" />
+    <meta name="description" content="Herald — a local-first dispatch desk. Nothing sends without approval." />
     <title>Herald — dispatch desk</title>
     <link rel="stylesheet" href="/ui.css" />
   </head>
@@ -12,7 +13,14 @@
 
     <aside class="rail">
       <header class="masthead">
-        <h1>Herald</h1>
+        <div class="masthead-line">
+          <svg class="masthead-mark" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+            <circle cx="14" cy="14" r="13" fill="none" stroke="#a98d4f" stroke-width="1" opacity="0.6" />
+            <path d="M14 3 L16.2 11.8 L25 14 L16.2 16.2 L14 25 L11.8 16.2 L3 14 L11.8 11.8 Z" fill="#cdb878" />
+            <circle cx="14" cy="14" r="2.1" fill="#171a16" stroke="#a98d4f" stroke-width="1" />
+          </svg>
+          <h1>Herald</h1>
+        </div>
         <p class="masthead-sub">Local-first dispatch</p>
         <div class="rule"><span></span></div>
       </header>
@@ -120,6 +128,7 @@
           <span class="ask-hint"><kbd>⌘</kbd><kbd>↵</kbd> to run</span>
         </div>
         <div class="ask-row">
+          <span class="ask-prompt" aria-hidden="true">herald ›</span>
           <textarea id="instruction" rows="1" placeholder="read my mentions · summarize the latest from the founder"></textarea>
           <button class="run" type="submit">Run</button>
         </div>
@@ -145,6 +154,7 @@
           <div><dt>hash</dt><dd id="dialog-hash"></dd></div>
           <div><dt>expires</dt><dd id="dialog-expires"></dd></div>
         </dl>
+        <p class="tiny dialog-fine">Sent exactly as shown above — byte for byte.</p>
         <div class="dialog-actions">
           <button value="cancel" class="ghost" type="submit">Cancel</button>
           <button value="confirm" class="run danger" id="dialog-confirm" type="submit">Approve &amp; send</button>

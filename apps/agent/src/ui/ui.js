@@ -381,7 +381,7 @@
     if (!state.history.length) {
       const empty = el("div", "empty");
       empty.append(
-        el("div", "empty-mark", "·"),
+        el("div", "empty-mark", "∅"),
         el("h3", null, "No recorded actions"),
         el("p", null, "Reads, drafts, approvals, and sends appear here after they run."),
       );

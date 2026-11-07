@@ -13,8 +13,12 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
-    "icon": []
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "icon": ["icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "Herald desktop shell",
+    "longDescription": "A desktop window around `herald ui`. The shell spawns the herald CLI's loopback server and shows its page; all logic and approvals stay in the CLI.",
+    "externalBin": ["binaries/herald"]
   }
 }

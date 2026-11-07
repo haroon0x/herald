@@ -1,6 +1,7 @@
 /target
 /apps/desktop/target
 /apps/desktop/gen
+/apps/desktop/binaries
 /data
 # Local Cargo home used for offline/sandboxed builds.
 /.cargo-home/

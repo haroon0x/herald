@@ -91,10 +91,11 @@ These are requested and tracked, not shipped:
   does not expose it in the UI and will not guess at the embed.
 - **A GUI.** Shipped as `herald ui`: a loopback browser UI over the same
   commands and approval queue ([ui.md](ui.md), ADR 0010). The Tauri desktop
-  shell is scaffolded at `apps/desktop/` (own workspace; spawns `herald ui`
-  and shows its token'd page in a WebView) and needs the system packages
-  (`libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf`) to
-  build on Linux. Release bundling follows once dev builds work.
+  shell (`apps/desktop/`, own workspace; spawns `herald ui` and shows its
+  token'd page in a WebView) builds and bundles on Linux as a `.deb` plus an
+  AppImage with the `herald` sidecar inside — see its README for the exact
+  build steps and system packages (`libwebkit2gtk-4.1-dev librsvg2-dev
+  patchelf`). Windows/macOS bundle icons are still missing.
 - **Post metrics.** Not implemented in Herald; the Zyquor pipeline owns posting performance.
 
 ## v1.1: IMAP, read-only

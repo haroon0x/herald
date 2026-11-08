@@ -4,6 +4,10 @@
 //! schema, and wording in one request. The classifier answers exactly one
 //! question with a grammar-forced enum. Drafting is plain text with no JSON.
 
+use std::fmt::Write as _;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// The operation enums the classifier may choose from.
@@ -119,13 +123,65 @@ pub fn classifier_schema() -> Value {
 ///
 /// The thread context is supplied by Rust and is already untrusted-marked, so
 /// injection inside a message cannot become an instruction here either.
+///
+/// `tone` is an optional user-configured style hint (e.g. "warm and brief");
+/// `length` picks the sentence guidance. `None` + [`DraftLength::Default`]
+/// keeps the historical prompt: "1-3 sentences" and no tone line.
 #[must_use]
-pub fn draft_system() -> String {
-    r#"You write one short reply for the user.
+pub fn draft_system(tone: Option<&str>, length: DraftLength) -> String {
+    let guidance = match length {
+        DraftLength::Short => "1 sentence",
+        DraftLength::Default => "1-3 sentences",
+        DraftLength::Long => "3-6 sentences",
+    };
+    let mut system = format!(
+        r#"You write one short reply for the user.
 Given: who the reply is for and what the user asked to convey.
 Write only the reply body. No subject, no signature, no commentary, no JSON.
-Be concise: 1-3 sentences, plain language, match the user's tone ("polite", "brief")."#
-        .to_string()
+Be concise: {guidance}, plain language, match the user's tone ("polite", "brief")."#
+    );
+    if let Some(tone) = tone {
+        system.push('\n');
+        let _ = write!(system, "Tone hint: {tone}.");
+    }
+    system
+}
+
+/// Preferred reply length, configured in `[draft]` and surfaced in prompts
+/// and stats. It shapes only model guidance, never validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DraftLength {
+    Short,
+    #[default]
+    Default,
+    Long,
+}
+
+impl DraftLength {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Short => "short",
+            Self::Default => "default",
+            Self::Long => "long",
+        }
+    }
+}
+
+impl FromStr for DraftLength {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "short" => Ok(Self::Short),
+            "default" => Ok(Self::Default),
+            "long" => Ok(Self::Long),
+            other => Err(format!(
+                "unknown draft length {other:?}; expected short, default, or long"
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -224,5 +280,42 @@ mod tests {
                 "{field} should be a string"
             );
         }
+    }
+
+    #[test]
+    fn draft_system_defaults_match_the_historical_prompt() {
+        // `None` + `Default` must not change what the model saw before tone
+        // hints and length control existed: every existing measurement stays
+        // comparable.
+        let system = draft_system(None, DraftLength::Default);
+        assert!(system.contains("1-3 sentences"), "got: {system}");
+        assert!(!system.contains("Tone hint:"), "got: {system}");
+    }
+
+    #[test]
+    fn draft_system_carries_tone_and_length_hints() {
+        let short = draft_system(Some("warm and brief"), DraftLength::Short);
+        assert!(short.contains("Tone hint: warm and brief."), "got: {short}");
+        assert!(short.contains("1 sentence"), "got: {short}");
+        assert!(!short.contains("1-3 sentences"), "got: {short}");
+
+        let long = draft_system(Some("formal"), DraftLength::Long);
+        assert!(long.contains("Tone hint: formal."), "got: {long}");
+        assert!(long.contains("3-6 sentences"), "got: {long}");
+    }
+
+    #[test]
+    fn draft_length_parses_and_round_trips() {
+        for (text, length) in [
+            ("short", DraftLength::Short),
+            ("default", DraftLength::Default),
+            ("LONG", DraftLength::Long),
+            (" long ", DraftLength::Long),
+        ] {
+            assert_eq!(DraftLength::from_str(text).unwrap(), length, "{text}");
+            assert_eq!(DraftLength::from_str(length.as_str()).unwrap(), length);
+        }
+        assert!(DraftLength::from_str("medium").is_err());
+        assert!(DraftLength::from_str("").is_err());
     }
 }

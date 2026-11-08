@@ -751,6 +751,44 @@ input:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.approval-meta {
+  margin: 7px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.approval-diff {
+  margin-top: 9px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+}
+.diff-caption {
+  margin: 0 0 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.diff-view {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.diff-add {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 2px;
+}
+.diff-del {
+  color: var(--muted);
+  text-decoration: line-through;
+}
 .approval-actions { display: flex; gap: 8px; margin-top: 14px; }
 .approval-actions .run, .dialog-actions .run { min-height: 38px; }
 .approval-actions .ghost { min-height: 38px; }

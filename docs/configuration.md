@@ -218,6 +218,13 @@ The model is optional. With `backend = "none"` the rules router still handles
 the common commands, and `--engine model` fails with `model_not_configured`
 instead of silently falling back.
 
+### `[draft]`
+
+| Key | Type | Default | Example | Notes |
+| --- | --- | --- | --- | --- |
+| `tone` | string | none | `"warm and brief"` | One-line style hint injected into the draft prompt. Trimmed, at most 120 characters, no newlines. Model guidance only — never a gate. |
+| `length` | string | `"default"` | `"short"` | Reply-length guidance: `short` (1 sentence), `default` (1-3 sentences), `long` (3-6 sentences). The measured word/character counts are reported with every draft and approval. |
+
 ## Environment variables
 
 Overrides applied to the configuration:
@@ -245,6 +252,8 @@ Overrides applied to the configuration:
 | `HERALD_SMTP_USERNAME` | `maildir.smtp.username` | `me@example.com` |
 | `HERALD_SMTP_SECURITY` | `maildir.smtp.security` | `starttls` |
 | `HERALD_MODEL_BACKEND` | `model.backend` | `openai` |
+| `HERALD_DRAFT_TONE` | `draft.tone` | `warm and brief` |
+| `HERALD_DRAFT_LENGTH` | `draft.length` | `long` |
 | `HERALD_MODEL_ENDPOINT` | `model.endpoint` | `http://127.0.0.1:11434/v1` |
 | `HERALD_MODEL_NAME` | `model.model_name` | `qwen3.5:0.8b` |
 

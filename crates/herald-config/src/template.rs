@@ -33,6 +33,13 @@ backend = "none"
 context_size = 4096
 threads = 4
 
+# Reply-draft style hints, injected into the draft prompt. The tone is a
+# one-line instruction for your own replies (e.g. "warm and brief"); the
+# length picks the sentence guidance (short = 1 sentence, default = 1-3,
+# long = 3-6). Neither changes what is sent: only the approval does.
+# draft tone = "warm and brief"
+# draft length = "default"   # short | default | long
+
 # Local email. Uncomment and edit to read a real mailbox.
 # [maildir]
 # path = "~/Mail"

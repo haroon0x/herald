@@ -66,7 +66,7 @@ pub async fn run(
         }
         plan.reply_body = Some(body);
     } else if let Some(model) = model.as_ref() {
-        planner::draft_missing_body(model, &mut plan, instruction).await;
+        planner::draft_missing_body(model, &mut plan, instruction, &app.config.draft).await;
     }
 
     let action = match validate_plan(plan) {
@@ -125,6 +125,18 @@ pub async fn run(
             app.out.field("thread", &queued.thread_id);
             app.out.field("body", &request.body);
             app.out.field("hash", &request.body_hash);
+            let stats = send::body_stats(&queued.body);
+            app.out.field(
+                "length",
+                format!("{} words, {} chars", stats.words, stats.chars),
+            );
+            if let Some(diff) = &queued.diff {
+                let (added, removed) = send::diff_counts(diff);
+                app.out.field(
+                    "diff",
+                    format!("vs last message: +{added} −{removed} words"),
+                );
+            }
             app.out
                 .field("expires", format_time_ms(queued.expires_at_ms));
             app.out.blank();
@@ -147,6 +159,9 @@ pub async fn run(
                     "thread_id": queued.thread_id,
                     "body": queued.body,
                     "body_hash": queued.body_hash,
+                    "words": stats.words,
+                    "chars": stats.chars,
+                    "diff": queued.diff,
                     "expires_at_ms": queued.expires_at_ms,
                 }),
             );
@@ -190,7 +205,7 @@ pub async fn dry_run(
         };
     }
     if let Some(model) = model.as_ref() {
-        planner::draft_missing_body(model, &mut plan, instruction).await;
+        planner::draft_missing_body(model, &mut plan, instruction, &app.config.draft).await;
     }
 
     let action = match validate_plan(plan) {
@@ -309,9 +324,23 @@ pub fn print_outcome(app: &App, outcome: &ExecutionOutcome) {
             }
             app.out.field("new", format!("{new_count} recorded"));
         }
-        ExecutionOutcome::Draft { body_hash } => {
+        ExecutionOutcome::Draft {
+            body_hash,
+            words,
+            chars,
+            tone,
+            length,
+        } => {
             app.out.line("draft:     prepared locally (nothing sent)");
             app.out.field("hash", body_hash);
+            app.out
+                .field("length", format!("{words} words, {chars} chars"));
+            if let Some(tone) = tone {
+                app.out.field("tone", tone);
+            }
+            if *length != herald_core::intent::DraftLength::Default {
+                app.out.field("draft length", length.as_str());
+            }
         }
         ExecutionOutcome::Deferred { provider } => {
             app.out.line(format!(
@@ -421,9 +450,21 @@ fn outcome_json(outcome: &ExecutionOutcome) -> Value {
             "summary": summary,
             "summary_citations": summary_citations(thread),
         }),
-        ExecutionOutcome::Draft { body_hash } => {
-            json!({"kind": "draft", "body_hash": body_hash, "sent": false})
-        }
+        ExecutionOutcome::Draft {
+            body_hash,
+            words,
+            chars,
+            tone,
+            length,
+        } => json!({
+            "kind": "draft",
+            "body_hash": body_hash,
+            "words": words,
+            "chars": chars,
+            "tone": tone,
+            "length": length.as_str(),
+            "sent": false
+        }),
         ExecutionOutcome::Deferred { provider } => {
             json!({"kind": "deferred", "provider": provider})
         }

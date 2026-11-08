@@ -6,6 +6,7 @@
 //! idempotent [`ActionState`] machine.
 
 pub mod action;
+pub mod diff;
 pub mod error;
 pub mod intent;
 pub mod policy;
@@ -18,6 +19,7 @@ pub use action::{
     Action, ActionPlan, DraftAction, Operation, ReadAction, ReadOperation, SendAction, Target,
     ThreadId, body_hash, canonical_body_text, validate_plan,
 };
+pub use diff::{DiffKind, DiffSegment, word_diff};
 pub use error::PlanError;
 pub use policy::{ApprovalRequest, Decision, PolicyConfig, Rejection, authorize};
 pub use provider::{

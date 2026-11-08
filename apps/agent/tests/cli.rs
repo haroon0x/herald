@@ -508,6 +508,7 @@ fn an_expired_approval_is_cancelled_not_left_pending() {
             thread_id: ThreadId::new("t-founder"),
             body: "should be deleted".into(),
             body_hash: "hash".into(),
+            diff: None,
             created_at_ms: 1,
             expires_at_ms: 2,
         })
@@ -646,6 +647,53 @@ fn ask_with_body_env_queues_the_exact_body_and_sends_nothing() {
     let (history, output) = env.json(&["history"], &[]);
     assert!(output.status.success());
     assert_eq!(data(&history)["actions"][0]["state"], "awaiting_approval");
+}
+
+#[test]
+fn queued_approval_carries_stats_and_a_word_diff_against_the_last_message() {
+    let env = Env::new();
+    // Shares four words with the founder thread's last message
+    // ("Following up on the above."), so the diff has eq/del/add segments.
+    let body = "Following up on the interview went well today.";
+
+    let (queued, output) = env.json(
+        &[
+            "ask",
+            "Send exactly: to the founder",
+            "--provider",
+            "fake",
+            "--body-env",
+            "HERALD_BODY",
+            "--enable-send",
+        ],
+        &[("HERALD_BODY", body)],
+    );
+    assert!(output.status.success());
+    assert_eq!(data(&queued)["status"], "awaiting_approval");
+    assert_eq!(data(&queued)["words"], 8);
+    assert_eq!(data(&queued)["chars"], 46);
+    assert_eq!(
+        data(&queued)["diff"],
+        serde_json::json!([
+            {"kind": "eq", "text": "Following up on the"},
+            {"kind": "del", "text": "above."},
+            {"kind": "add", "text": "interview went well today."},
+        ])
+    );
+
+    // The persisted approval keeps stats and diff for the review surfaces.
+    let (approvals, output) = env.json(&["approvals"], &[]);
+    assert!(output.status.success());
+    let approval = &data(&approvals)["approvals"][0];
+    assert_eq!(approval["words"], 8);
+    assert_eq!(approval["chars"], 46);
+    assert_eq!(approval["diff"], data(&queued)["diff"]);
+
+    // The approval card text summary counts added and removed words.
+    let output = env.run(&["approvals"], &[]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("+4 −1 words"), "got: {stdout}");
 }
 
 #[test]

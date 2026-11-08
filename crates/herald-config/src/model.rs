@@ -6,6 +6,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use herald_core::intent::DraftLength;
 use herald_core::{PolicyConfig, ProviderId};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,8 @@ pub struct Config {
     /// Present only when the X (Twitter) browser adapter is configured.
     pub x: Option<XSettings>,
     pub model: ModelSettings,
+    /// Draft tone and length hints, injected into the reply-draft prompt.
+    pub draft: DraftSettings,
 }
 
 impl Default for Config {
@@ -37,6 +40,7 @@ impl Default for Config {
             imap: None,
             x: None,
             model: ModelSettings::default(),
+            draft: DraftSettings::default(),
         }
     }
 }
@@ -81,6 +85,7 @@ impl Config {
             validate_x_handle(x.handle.as_deref())?;
         }
 
+        self.draft.validate()?;
         self.model.validate()
     }
 
@@ -141,6 +146,15 @@ impl Config {
 
         if let Some(value) = get_env("HERALD_MODEL_NAME") {
             self.model.model_name = Some(value);
+        }
+
+        if let Some(value) = get_env("HERALD_DRAFT_TONE") {
+            self.draft.tone = Some(value);
+        }
+
+        if let Some(value) = get_env("HERALD_DRAFT_LENGTH") {
+            self.draft.length = DraftLength::from_str(&value)
+                .map_err(|error| ConfigError::Env(format!("HERALD_DRAFT_LENGTH: {error}")))?;
         }
 
         self.apply_imap_env(&get_env)?;
@@ -368,31 +382,104 @@ impl Config {
         if let Some(manifest) = &self.model.manifest {
             values.insert("model.manifest".to_string(), manifest.display().to_string());
         }
+        for (key, value) in draft_values(&self.draft) {
+            values.insert(key, value);
+        }
 
         if let Some(x) = &self.x {
-            if let Some(profile_dir) = &x.profile_dir {
-                values.insert(
-                    "x.profile_dir".to_string(),
-                    profile_dir.display().to_string(),
-                );
+            for (key, value) in x_values(x) {
+                values.insert(key, value);
             }
-            if let Some(handle) = &x.handle {
-                values.insert("x.handle".to_string(), handle.clone());
-            }
-            values.insert("x.headless".to_string(), x.headless.to_string());
-            values.insert(
-                "x.action_delay_ms".to_string(),
-                x.action_delay_ms.to_string(),
-            );
-            values.insert(
-                "x.typing_delay_ms".to_string(),
-                x.typing_delay_ms.to_string(),
-            );
-            values.insert("x.close_after".to_string(), x.close_after.to_string());
-            values.insert("x.read_only".to_string(), x.read_only.to_string());
         }
 
         values.into_iter().collect()
+    }
+}
+
+/// Non-secret `[draft]` values for `flat()`. The tone appears only when
+/// configured; the length is always reported (it has a meaningful
+/// default).
+fn draft_values(draft: &DraftSettings) -> Vec<(String, String)> {
+    let mut values = Vec::new();
+    if let Some(tone) = &draft.tone {
+        values.push(("draft.tone".to_string(), tone.clone()));
+    }
+    values.push((
+        "draft.length".to_string(),
+        draft.length.as_str().to_string(),
+    ));
+    values
+}
+
+/// Non-secret `[x]` values for `flat()`.
+fn x_values(x: &XSettings) -> Vec<(String, String)> {
+    let mut values = Vec::new();
+    if let Some(profile_dir) = &x.profile_dir {
+        values.push((
+            "x.profile_dir".to_string(),
+            profile_dir.display().to_string(),
+        ));
+    }
+    if let Some(handle) = &x.handle {
+        values.push(("x.handle".to_string(), handle.clone()));
+    }
+    values.push(("x.headless".to_string(), x.headless.to_string()));
+    values.push((
+        "x.action_delay_ms".to_string(),
+        x.action_delay_ms.to_string(),
+    ));
+    values.push((
+        "x.typing_delay_ms".to_string(),
+        x.typing_delay_ms.to_string(),
+    ));
+    values.push(("x.close_after".to_string(), x.close_after.to_string()));
+    values.push(("x.read_only".to_string(), x.read_only.to_string()));
+    values
+}
+
+/// Reply-draft style hints. The tone is a free-text instruction the user
+/// writes for their own replies (e.g. "warm and brief"); the length picks the
+/// sentence guidance in the draft prompt. Both are model *guidance*, never
+/// gates: validation only keeps the hint well-formed for the prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DraftSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<String>,
+    pub length: DraftLength,
+}
+
+impl Default for DraftSettings {
+    fn default() -> Self {
+        Self {
+            tone: None,
+            length: DraftLength::Default,
+        }
+    }
+}
+
+impl DraftSettings {
+    fn validate(&self) -> Result<(), ConfigError> {
+        let Some(tone) = &self.tone else {
+            return Ok(());
+        };
+        let trimmed = tone.trim();
+        if trimmed.is_empty() {
+            return Err(ConfigError::Invalid(
+                "draft.tone must not be empty (omit it for no hint)".into(),
+            ));
+        }
+        if tone.contains(['\n', '\r']) {
+            return Err(ConfigError::Invalid(
+                "draft.tone must be a single line (no newlines)".into(),
+            ));
+        }
+        if tone.len() > 120 {
+            return Err(ConfigError::Invalid(
+                "draft.tone must be at most 120 characters".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -1139,6 +1226,96 @@ mod tests {
                 "{key} should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn draft_settings_validate_and_parse() {
+        let config: Config = toml::from_str("[draft]\n").unwrap();
+        assert_eq!(config.draft.tone, None);
+        assert_eq!(config.draft.length, DraftLength::Default);
+
+        let config: Config =
+            toml::from_str("[draft]\ntone = \"warm\"\nlength = \"long\"\n").unwrap();
+        assert_eq!(config.draft.tone.as_deref(), Some("warm"));
+        assert_eq!(config.draft.length, DraftLength::Long);
+        config.validate().unwrap();
+
+        // Unknown keys are rejected, including the removed autopost flags.
+        assert!(toml::from_str::<Config>("[draft]\nword_count = 3\n").is_err());
+        assert!(toml::from_str::<Config>("[draft]\nlength = \"medium\"\n").is_err());
+
+        for bad_tone in [
+            String::new(),
+            "   ".into(),
+            "two\nlines".into(),
+            "x".repeat(121),
+        ] {
+            let config = Config {
+                draft: DraftSettings {
+                    tone: Some(bad_tone.clone()),
+                    ..DraftSettings::default()
+                },
+                ..Config::default()
+            };
+            assert!(config.validate().is_err(), "tone {bad_tone:?} should fail");
+        }
+
+        let config = Config {
+            draft: DraftSettings {
+                tone: Some("warm and brief".into()),
+                length: DraftLength::Short,
+            },
+            ..Config::default()
+        };
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn draft_env_overrides_apply() {
+        let mut config = Config::default();
+        config
+            .apply_env(|key| match key {
+                "HERALD_DRAFT_TONE" => Some("formal".into()),
+                "HERALD_DRAFT_LENGTH" => Some("long".into()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(config.draft.tone.as_deref(), Some("formal"));
+        assert_eq!(config.draft.length, DraftLength::Long);
+
+        let mut config = Config::default();
+        assert!(
+            config
+                .apply_env(|key| match key {
+                    "HERALD_DRAFT_LENGTH" => Some("medium".into()),
+                    _ => None,
+                })
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn flat_contains_draft_keys() {
+        let flat = Config::default().flat();
+        assert!(!flat.iter().any(|(k, _)| k == "draft.tone"));
+        assert!(
+            flat.iter()
+                .any(|(k, v)| k == "draft.length" && v == "default")
+        );
+
+        let config = Config {
+            draft: DraftSettings {
+                tone: Some("warm".into()),
+                length: DraftLength::Short,
+            },
+            ..Config::default()
+        };
+        let flat = config.flat();
+        assert!(flat.iter().any(|(k, v)| k == "draft.tone" && v == "warm"));
+        assert!(
+            flat.iter()
+                .any(|(k, v)| k == "draft.length" && v == "short")
+        );
     }
 
     #[test]

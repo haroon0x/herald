@@ -9,12 +9,14 @@ use std::str::FromStr;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use herald_core::{MessageId, MessageSummary, ProviderId, Target, ThreadId, time::now_ms};
+use herald_core::{
+    DiffSegment, MessageId, MessageSummary, ProviderId, Target, ThreadId, time::now_ms,
+};
 
 pub use herald_core::ActionState;
 
 const SCHEMA: &str = include_str!("../schema.sql");
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -103,6 +105,11 @@ pub struct PendingApproval {
     pub thread_id: ThreadId,
     pub body: String,
     pub body_hash: String,
+    /// Word-level diff of `body` against the last message in the resolved
+    /// thread, computed at queue time. `None` when the thread could not be
+    /// read or the texts were empty/too large; the diff is a review aid,
+    /// never a gate on sending.
+    pub diff: Option<Vec<DiffSegment>>,
     pub created_at_ms: i64,
     pub expires_at_ms: i64,
 }
@@ -143,6 +150,7 @@ impl Store {
             // existed. `CREATE TABLE IF NOT EXISTS` cannot add them.
             ensure_column(&conn, "actions", "thread_id", "thread_id TEXT")?;
             ensure_column(&conn, "actions", "target_json", "target_json TEXT")?;
+            ensure_column(&conn, "pending_approvals", "diff_json", "diff_json TEXT")?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         }
         Ok(Self { conn })
@@ -281,10 +289,15 @@ impl Store {
     /// decision or expiry.
     pub fn create_approval(&self, approval: &PendingApproval) -> Result<(), StorageError> {
         let target = serde_json::to_string(&approval.target)?;
+        let diff = approval
+            .diff
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         let inserted = self.conn.execute(
             "INSERT INTO pending_approvals
-                (action_id, provider, target, thread_id, body, body_hash, created_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                (action_id, provider, target, thread_id, body, body_hash, created_at, expires_at, diff_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(action_id) DO NOTHING",
             params![
                 approval.action_id,
@@ -295,6 +308,7 @@ impl Store {
                 approval.body_hash,
                 approval.created_at_ms,
                 approval.expires_at_ms,
+                diff,
             ],
         )?;
 
@@ -308,7 +322,7 @@ impl Store {
         let row = self
             .conn
             .query_row(
-                "SELECT action_id, provider, target, thread_id, body, body_hash, created_at, expires_at
+                "SELECT action_id, provider, target, thread_id, body, body_hash, created_at, expires_at, diff_json
                  FROM pending_approvals WHERE action_id = ?1",
                 params![action_id],
                 |row| {
@@ -321,6 +335,7 @@ impl Store {
                         row.get::<_, String>(5)?,
                         row.get::<_, i64>(6)?,
                         row.get::<_, i64>(7)?,
+                        row.get::<_, Option<String>>(8)?,
                     ))
                 },
             )
@@ -331,7 +346,7 @@ impl Store {
 
     pub fn pending_approvals(&self) -> Result<Vec<PendingApproval>, StorageError> {
         let mut statement = self.conn.prepare(
-            "SELECT action_id, provider, target, thread_id, body, body_hash, created_at, expires_at
+            "SELECT action_id, provider, target, thread_id, body, body_hash, created_at, expires_at, diff_json
              FROM pending_approvals ORDER BY created_at ASC",
         )?;
 
@@ -345,6 +360,7 @@ impl Store {
                 row.get::<_, String>(5)?,
                 row.get::<_, i64>(6)?,
                 row.get::<_, i64>(7)?,
+                row.get::<_, Option<String>>(8)?,
             ))
         })?;
 
@@ -497,10 +513,30 @@ fn action_from_row(row: ActionRow) -> Result<ActionRecord, StorageError> {
     })
 }
 
-type ApprovalRow = (String, String, String, String, String, String, i64, i64);
+type ApprovalRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    i64,
+    Option<String>,
+);
 
 fn approval_from_row(row: ApprovalRow) -> Result<PendingApproval, StorageError> {
-    let (action_id, provider, target, thread_id, body, body_hash, created_at, expires_at) = row;
+    let (
+        action_id,
+        provider,
+        target,
+        thread_id,
+        body,
+        body_hash,
+        created_at,
+        expires_at,
+        diff_json,
+    ) = row;
     Ok(PendingApproval {
         action_id,
         provider: ProviderId::from_str(&provider).map_err(StorageError::BadState)?,
@@ -508,6 +544,9 @@ fn approval_from_row(row: ApprovalRow) -> Result<PendingApproval, StorageError> 
         thread_id: ThreadId::new(thread_id),
         body,
         body_hash,
+        diff: diff_json
+            .map(|value| serde_json::from_str(&value))
+            .transpose()?,
         created_at_ms: created_at,
         expires_at_ms: expires_at,
     })
@@ -628,6 +667,10 @@ mod tests {
             thread_id: ThreadId::new("t-sam"),
             body: "Thanks, Thursday works.".into(),
             body_hash: herald_core::body_hash("Thanks, Thursday works."),
+            diff: Some(vec![herald_core::DiffSegment {
+                kind: herald_core::DiffKind::Add,
+                text: "Thanks, Thursday works.".into(),
+            }]),
             created_at_ms: now_ms(),
             expires_at_ms,
         }
@@ -666,7 +709,26 @@ mod tests {
             }
         );
         assert_eq!(stored.body, "Thanks, Thursday works.");
+        assert_eq!(
+            stored.diff,
+            Some(vec![herald_core::DiffSegment {
+                kind: herald_core::DiffKind::Add,
+                text: "Thanks, Thursday works.".into(),
+            }])
+        );
         assert_eq!(store.approval_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn approvals_without_a_diff_read_back_none() {
+        let store = Store::open_in_memory().unwrap();
+        pending_action(&store, "a1");
+        let mut approval = approval("a1", now_ms() + 60_000);
+        approval.diff = None;
+        store.create_approval(&approval).unwrap();
+        let stored = store.get_approval("a1").unwrap().unwrap();
+        assert_eq!(stored.diff, None);
+        assert_eq!(store.pending_approvals().unwrap().len(), 1);
     }
 
     #[test]

@@ -6,9 +6,10 @@
 //! - `approve` re-resolves the target and re-checks the body hash;
 //! - a timeout becomes `uncertain`, which is reconciled, never retried.
 
+use herald_core::intent::DraftLength;
 use herald_core::{
-    Action, ActionState, MessageQuery, MessageSummary, ProviderId, ReadAction, ReadOperation,
-    SendAction, Target, Thread, ThreadId, body_hash, time::now_ms,
+    Action, ActionState, DiffSegment, MessageQuery, MessageSummary, ProviderId, ReadAction,
+    ReadOperation, SendAction, Target, Thread, ThreadId, body_hash, time::now_ms, word_diff,
 };
 use herald_provider::{CommunicationProvider, ExecutionReceipt, ProviderError};
 use herald_storage::{AuditEvent, PendingApproval, StoredMessage, new_action};
@@ -34,11 +35,17 @@ pub enum ExecutionOutcome {
     },
     Draft {
         body_hash: String,
+        /// Deterministic length stats of the prepared body, in words and
+        /// characters — the observable signal behind `[draft] length`.
+        words: usize,
+        chars: usize,
+        /// The tone and length hints that shaped the prompt (from `[draft]`
+        /// config), echoed so the caller can verify they applied.
+        tone: Option<String>,
+        length: DraftLength,
     },
     /// A planned read for a provider that has no adapter in this build.
-    Deferred {
-        provider: ProviderId,
-    },
+    Deferred { provider: ProviderId },
 }
 
 impl ExecutionOutcome {
@@ -52,10 +59,43 @@ impl ExecutionOutcome {
             Self::Thread {
                 thread, new_count, ..
             } => format!("{} message(s), {new_count} new", thread.messages.len()),
-            Self::Draft { body_hash } => format!("draft {body_hash} prepared locally"),
+            Self::Draft { body_hash, .. } => format!("draft {body_hash} prepared locally"),
             Self::Deferred { provider } => format!("no {provider} adapter; plan deferred"),
         }
     }
+}
+
+/// Deterministic length stats of a proposed body: whitespace-separated words
+/// and characters. Used for the `[draft] length` feedback loop — the prompt
+/// guides, these numbers report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BodyStats {
+    pub words: usize,
+    pub chars: usize,
+}
+
+#[must_use]
+pub fn body_stats(body: &str) -> BodyStats {
+    BodyStats {
+        words: body.split_whitespace().count(),
+        chars: body.chars().count(),
+    }
+}
+
+/// Added/removed word counts of a diff, for one-line summaries.
+#[must_use]
+pub fn diff_counts(segments: &[DiffSegment]) -> (usize, usize) {
+    let added: usize = segments
+        .iter()
+        .filter(|segment| segment.kind == herald_core::DiffKind::Add)
+        .map(|segment| segment.text.split_whitespace().count())
+        .sum();
+    let removed: usize = segments
+        .iter()
+        .filter(|segment| segment.kind == herald_core::DiffKind::Del)
+        .map(|segment| segment.text.split_whitespace().count())
+        .sum();
+    (added, removed)
 }
 
 /// A send that is waiting for a human decision.
@@ -67,6 +107,11 @@ pub struct QueuedApproval {
     pub thread_id: ThreadId,
     pub body: String,
     pub body_hash: String,
+    /// Word-level diff of `body` against the last message in the resolved
+    /// thread, best-effort: `None` when the thread could not be read or the
+    /// texts were empty/too large. A review aid, never a gate on sending —
+    /// a failed fetch never blocks queueing.
+    pub diff: Option<Vec<DiffSegment>>,
     pub expires_at_ms: i64,
 }
 
@@ -117,9 +162,16 @@ pub async fn execute_allowed(
 
     let result = match action {
         Action::Read(read) => execute_read(app, read, adapter.as_deref(), model).await,
-        Action::Draft(draft) => Ok(ExecutionOutcome::Draft {
-            body_hash: body_hash(&draft.body),
-        }),
+        Action::Draft(draft) => {
+            let stats = body_stats(&draft.body);
+            Ok(ExecutionOutcome::Draft {
+                body_hash: body_hash(&draft.body),
+                words: stats.words,
+                chars: stats.chars,
+                tone: app.config.draft.tone.clone(),
+                length: app.config.draft.length,
+            })
+        }
         Action::Send(_) => unreachable!("guarded above"),
     };
 
@@ -516,6 +568,22 @@ pub async fn queue_send(
         Some(&resolved),
     )?;
 
+    // Review aid: diff the proposed body against the last message in the
+    // resolved thread so the reviewer sees what the reply adds on top of the
+    // conversation. Best-effort by design — a thread that cannot be read
+    // (or an empty/oversized pair) yields no diff, never a failed queue.
+    let diff = match provider.get_thread(&resolved).await {
+        Ok(thread) => thread
+            .messages
+            .last()
+            .map(|message| word_diff(message.body.as_ref(), &action.body))
+            .filter(|segments| !segments.is_empty()),
+        Err(error) => {
+            tracing::warn!(%error, "diff fetch failed; queuing without a diff view");
+            None
+        }
+    };
+
     let ttl_ms = i64::try_from(app.config.policy.approval_ttl_hours)
         .unwrap_or(72)
         .saturating_mul(3_600_000);
@@ -529,6 +597,7 @@ pub async fn queue_send(
         thread_id: resolved.clone(),
         body: action.body.clone(),
         body_hash: action.body_hash.clone(),
+        diff: diff.clone(),
         created_at_ms: now,
         expires_at_ms,
     };
@@ -560,6 +629,7 @@ pub async fn queue_send(
         thread_id: resolved,
         body: action.body.clone(),
         body_hash: action.body_hash.clone(),
+        diff,
         expires_at_ms,
     })
 }
@@ -1044,6 +1114,32 @@ mod tests {
             }),
             Some("Sam".to_string())
         );
+    }
+
+    #[test]
+    fn body_stats_count_words_and_chars() {
+        assert_eq!(
+            body_stats("Thanks, Thursday works."),
+            BodyStats {
+                words: 3,
+                chars: 23
+            }
+        );
+        assert_eq!(
+            body_stats("  one   two\nthree "),
+            BodyStats {
+                words: 3,
+                chars: 18
+            }
+        );
+        assert_eq!(body_stats(""), BodyStats { words: 0, chars: 0 });
+    }
+
+    #[test]
+    fn diff_counts_split_added_and_removed_words() {
+        let segments = word_diff("thanks for the update", "thanks for the lease");
+        assert_eq!(diff_counts(&segments), (1, 1));
+        assert_eq!(diff_counts(&[]), (0, 0));
     }
 
     #[test]

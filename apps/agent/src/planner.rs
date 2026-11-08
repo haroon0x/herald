@@ -7,7 +7,8 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use herald_config::{Config, ModelBackend};
+use herald_config::{Config, DraftSettings, ModelBackend};
+use herald_core::intent::DraftLength;
 use herald_core::{ActionPlan, Operation, ProviderId, Thread, rules};
 use herald_runtime::{
     FallbackInference, Inference, LlamaSidecar, ModelManifest, OpenAiClient, OpenCodeInference,
@@ -88,14 +89,22 @@ impl Model {
     }
 
     /// Tier 3: draft a reply body. Plain text in, plain text out, no JSON.
-    pub async fn draft(&self, addressed_to: &str, intent: &str) -> Result<String, AppError> {
+    /// The tone hint and length come from `[draft]` config; both are model
+    /// guidance only, never gates.
+    pub async fn draft(
+        &self,
+        addressed_to: &str,
+        intent: &str,
+        tone: Option<&str>,
+        length: DraftLength,
+    ) -> Result<String, AppError> {
         let user = format!(
             "<reply-to>\n{addressed_to}\n</reply-to>\n<convey>\n{}\n</convey>",
             intent.trim()
         );
         self.backend
             .complete_text(
-                &herald_core::intent::draft_system(),
+                &herald_core::intent::draft_system(tone, length),
                 &user,
                 DRAFT_MAX_TOKENS,
             )
@@ -287,13 +296,26 @@ pub fn plan_from_classification(
 /// Fill in the body of an unquoted reply plan with the draft model.
 ///
 /// This is still a plan; the caller validates it and the policy still decides.
-pub async fn draft_missing_body(model: &Model, plan: &mut ActionPlan, instruction: &str) {
+pub async fn draft_missing_body(
+    model: &Model,
+    plan: &mut ActionPlan,
+    instruction: &str,
+    draft: &DraftSettings,
+) {
     if plan.needs_clarification || plan.reply_body.is_some() {
         return;
     }
 
     if plan.operation == Operation::PrepareReply {
-        match model.draft(&plan.target.describe(), instruction).await {
+        match model
+            .draft(
+                &plan.target.describe(),
+                instruction,
+                draft.tone.as_deref(),
+                draft.length,
+            )
+            .await
+        {
             Ok(body) if !body.trim().is_empty() => {
                 plan.reply_body = Some(body.trim().to_string());
             }
@@ -381,8 +403,10 @@ pub fn json_slice(raw: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
     use herald_core::{
-        MessageId, PlanError, ProviderMessage, Target, ThreadId, Untrusted, validate_plan,
+        Action, MessageId, PlanError, ProviderMessage, Target, ThreadId, Untrusted, validate_plan,
     };
 
     #[test]
@@ -594,5 +618,126 @@ mod tests {
             lower.contains("never invent") || lower.contains("do not invent"),
             "system prompt should forbid invented IDs"
         );
+    }
+
+    /// An [`Inference`] double that records every system prompt it is handed
+    /// and answers with a canned reply. Proves tone/length hints reach the
+    /// actual draft prompt, not just a builder function.
+    #[derive(Debug)]
+    struct CapturingBackend {
+        prompts: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl CapturingBackend {
+        fn capturing() -> (Arc<Mutex<Vec<String>>>, Self) {
+            let prompts = Arc::new(Mutex::new(Vec::new()));
+            let backend = Self {
+                prompts: prompts.clone(),
+            };
+            (prompts, backend)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Inference for CapturingBackend {
+        async fn complete_json(
+            &self,
+            _system: &str,
+            _user: &str,
+            _max_tokens: u16,
+            _schema: Option<&serde_json::Value>,
+        ) -> Result<String, herald_runtime::RuntimeError> {
+            unreachable!("drafting is plain text; JSON should not be called")
+        }
+
+        async fn complete_text(
+            &self,
+            system: &str,
+            _user: &str,
+            _max_tokens: u16,
+        ) -> Result<String, herald_runtime::RuntimeError> {
+            self.prompts.lock().expect("mutex").push(system.to_string());
+            Ok("Drafted body.".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn draft_missing_body_fills_from_the_model_and_applies_style_hints() {
+        let (prompts, backend) = CapturingBackend::capturing();
+        let model = Model::new(Box::new(backend));
+        let settings = DraftSettings {
+            tone: Some("warm and brief".into()),
+            length: DraftLength::Short,
+        };
+        let mut plan = ActionPlan {
+            provider: ProviderId::Fake,
+            operation: Operation::PrepareReply,
+            target: Target::Description {
+                description: "the founder".into(),
+            },
+            reply_body: None,
+            needs_clarification: false,
+            clarification_question: None,
+        };
+        draft_missing_body(&model, &mut plan, "say thanks", &settings).await;
+
+        let action = validate_plan(plan).unwrap();
+        let Action::Draft(draft) = action else {
+            panic!("expected a draft action");
+        };
+        assert_eq!(draft.body, "Drafted body.");
+        {
+            let seen = prompts.lock().expect("mutex");
+            assert_eq!(seen.len(), 1);
+            assert!(
+                seen[0].contains("Tone hint: warm and brief."),
+                "got: {}",
+                seen[0]
+            );
+            assert!(seen[0].contains("1 sentence"), "got: {}", seen[0]);
+            assert!(!seen[0].contains("1-3 sentences"), "got: {}", seen[0]);
+        }
+
+        // A quoted body is never overwritten by the model.
+        let mut plan = ActionPlan {
+            provider: ProviderId::Fake,
+            operation: Operation::PrepareReply,
+            target: Target::Description {
+                description: "the founder".into(),
+            },
+            reply_body: Some("Exact words.".into()),
+            needs_clarification: false,
+            clarification_question: None,
+        };
+        draft_missing_body(&model, &mut plan, "say thanks", &settings).await;
+        assert_eq!(plan.reply_body.as_deref(), Some("Exact words."));
+        assert_eq!(prompts.lock().expect("mutex").len(), 1, "no second call");
+    }
+
+    #[tokio::test]
+    async fn draft_prompt_hints_are_verbatim_in_the_system_prompt() {
+        let (prompts, backend) = CapturingBackend::capturing();
+        let model = Model::new(Box::new(backend));
+        model
+            .draft("the founder", "say thanks", Some("warm"), DraftLength::Long)
+            .await
+            .unwrap();
+        {
+            let seen = prompts.lock().expect("mutex");
+            assert_eq!(seen.len(), 1);
+            assert!(seen[0].contains("Tone hint: warm."), "got: {}", seen[0]);
+            assert!(seen[0].contains("3-6 sentences"), "got: {}", seen[0]);
+        }
+
+        // Defaults add no tone line and keep the historical guidance.
+        let (prompts, backend) = CapturingBackend::capturing();
+        Model::new(Box::new(backend))
+            .draft("the founder", "say thanks", None, DraftLength::Default)
+            .await
+            .unwrap();
+        let seen = prompts.lock().expect("mutex");
+        assert_eq!(seen.len(), 1);
+        assert!(!seen[0].contains("Tone hint:"), "got: {}", seen[0]);
+        assert!(seen[0].contains("1-3 sentences"), "got: {}", seen[0]);
     }
 }

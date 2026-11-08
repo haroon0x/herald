@@ -59,7 +59,11 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     body       TEXT NOT NULL,
     body_hash  TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    -- Word-level diff of the proposed body against the last thread message,
+    -- JSON segments. NULL means no diff was computed (best-effort at queue
+    -- time). Dies with the row, like the body.
+    diff_json  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_approvals_expiry

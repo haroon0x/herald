@@ -146,8 +146,27 @@ Still open:
 
 - Local full-text search over stored metadata plus on-demand bodies, with a
   retention policy the user can see.
-- Draft quality work: tone hints, reply length, and a diff view of the proposed
-  body.
+
+Shipped 2026-11-09 (draft quality):
+
+- Tone hints and reply length: a `[draft]` config section with `tone`
+  (one-line style hint, validated) and `length` (`short` = 1 sentence,
+  `default` = 1-3 sentences, `long` = 3-6 sentences). Both are injected
+  into the tier-3 draft prompt only, with env overrides
+  `HERALD_DRAFT_TONE`/`HERALD_DRAFT_LENGTH` and `config get`/`list`
+  exposure. With neither set, the prompt is the historical one, so every
+  prior measurement stays comparable. Draft outcomes report the measured
+  length (`words`/`chars`) plus the applied tone and length, so the hint is
+  verifiable without trusting the model.
+- Diff view of the proposed body: `queue_send` resolves the thread, then
+  best-effort reads it and computes a deterministic word-level LCS diff of
+  the proposed body against the last message in the thread. Segments
+  (`eq`/`add`/`del`) are persisted on the approval row (schema v4) with the
+  same lifetime as the body, and rendered in the UI approval card (added
+  words highlighted, removed struck through), the CLI approval summary
+  (`+N −M words`), and `--json`. A thread that cannot be read yields no
+  diff — it never blocks queueing. Drafts stay provider-free by design, so
+  the diff applies to the approval path only.
 
 Search is where retention becomes a real design question. v1.2 will need an
 explicit, configurable body-retention window, and it will have to be deletable.

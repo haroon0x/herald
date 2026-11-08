@@ -38,6 +38,18 @@ pub fn list(app: &App) -> Result<u8, AppError> {
         app.out.field("target", &action.target);
         app.out.field("thread", &approval.thread_id);
         app.out.field("body", preview(&approval.body, 72));
+        let stats = send::body_stats(&approval.body);
+        app.out.field(
+            "length",
+            format!("{} words, {} chars", stats.words, stats.chars),
+        );
+        if let Some(diff) = &approval.diff {
+            let (added, removed) = send::diff_counts(diff);
+            app.out.field(
+                "diff",
+                format!("vs last message: +{added} −{removed} words"),
+            );
+        }
         app.out.field("hash", &approval.body_hash);
         app.out
             .field("expires", format_time_ms(approval.expires_at_ms));
@@ -130,6 +142,7 @@ pub async fn reconcile(app: &App, id: &str) -> Result<u8, AppError> {
 }
 
 fn approval_json(approval: &PendingApproval, target: &str) -> serde_json::Value {
+    let stats = send::body_stats(&approval.body);
     json!({
         "action_id": approval.action_id,
         "provider": approval.provider,
@@ -137,6 +150,9 @@ fn approval_json(approval: &PendingApproval, target: &str) -> serde_json::Value 
         "thread_id": approval.thread_id,
         "body": approval.body,
         "body_hash": approval.body_hash,
+        "words": stats.words,
+        "chars": stats.chars,
+        "diff": approval.diff,
         "created_at_ms": approval.created_at_ms,
         "expires_at_ms": approval.expires_at_ms,
     })

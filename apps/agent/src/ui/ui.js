@@ -319,6 +319,24 @@
       el("p", "approval-target", approval.target || approval.thread_id || ""),
       el("pre", "approval-body", approval.body || ""),
     );
+    if (typeof approval.words === "number" && typeof approval.chars === "number") {
+      card.append(
+        el("p", "approval-meta", `${approval.words} words · ${approval.chars} chars`),
+      );
+    }
+    if (Array.isArray(approval.diff) && approval.diff.length) {
+      const diff = el("div", "approval-diff");
+      diff.append(el("p", "diff-caption", "vs. the last message in the thread"));
+      const view = el("p", "diff-view");
+      approval.diff.forEach((segment) => {
+        if (!segment) return;
+        const kind = segment.kind === "add" || segment.kind === "del" ? segment.kind : "eq";
+        view.append(el("span", `diff-${kind}`, segment.text || ""));
+        view.append(document.createTextNode(" "));
+      });
+      diff.append(view);
+      card.append(diff);
+    }
     const actions = el("div", "approval-actions");
     const approve = el("button", "run", "Review");
     approve.type = "button";

@@ -304,6 +304,8 @@ pub fn print_outcome(app: &App, outcome: &ExecutionOutcome) {
                 app.out.blank();
                 app.out.heading("Summary");
                 app.out.line(summary);
+                app.out
+                    .field("citations", summary_citations(thread).join(", "));
             }
             app.out.field("new", format!("{new_count} recorded"));
         }
@@ -385,6 +387,19 @@ pub fn thread_json(thread: &Thread) -> Value {
     })
 }
 
+/// IDs available as summary citations.
+///
+/// Derived from the thread itself, never parsed from the summary text: the
+/// summary string stays inert, so a citation-looking string the model writes
+/// (or any ID it hallucinates) never enters this list.
+fn summary_citations(thread: &Thread) -> Vec<String> {
+    thread
+        .messages
+        .iter()
+        .map(|message| message.id.as_str().to_string())
+        .collect()
+}
+
 fn outcome_json(outcome: &ExecutionOutcome) -> Value {
     match outcome {
         ExecutionOutcome::Messages {
@@ -404,6 +419,7 @@ fn outcome_json(outcome: &ExecutionOutcome) -> Value {
             "thread": thread_json(thread),
             "new_count": new_count,
             "summary": summary,
+            "summary_citations": summary_citations(thread),
         }),
         ExecutionOutcome::Draft { body_hash } => {
             json!({"kind": "draft", "body_hash": body_hash, "sent": false})
@@ -411,5 +427,80 @@ fn outcome_json(outcome: &ExecutionOutcome) -> Value {
         ExecutionOutcome::Deferred { provider } => {
             json!({"kind": "deferred", "provider": provider})
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herald_core::{MessageId, ProviderId, ProviderMessage, Untrusted};
+
+    fn thread_with(ids: &[&str]) -> Thread {
+        Thread {
+            id: ThreadId::new("t1"),
+            provider: ProviderId::Fake,
+            subject: "Interview".into(),
+            messages: ids
+                .iter()
+                .map(|id| ProviderMessage {
+                    id: MessageId::new(*id),
+                    thread_id: ThreadId::new("t1"),
+                    sender: "Alex".into(),
+                    subject: "Interview".into(),
+                    body: Untrusted("Are you still interested?".into()),
+                    timestamp_ms: 0,
+                    unread: true,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn citations_name_only_thread_ids_and_summary_stays_inert() {
+        let thread = thread_with(&["m-founder-1", "m-founder-2"]);
+        let outcome = ExecutionOutcome::Thread {
+            thread,
+            new_count: 0,
+            summary: Some("Sam asked about the lease [m-founder-1] [m999-invented].".to_string()),
+        };
+        let value = outcome_json(&outcome);
+        assert_eq!(
+            value["summary_citations"],
+            Value::Array(vec![
+                Value::String("m-founder-1".to_string()),
+                Value::String("m-founder-2".to_string()),
+            ])
+        );
+        assert!(
+            value["summary_citations"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().all(|id| id != "m999-invented")),
+            "an invented ID in the summary text must not enter citations"
+        );
+        // The summary string itself is carried verbatim, never executed or
+        // rewritten.
+        assert_eq!(
+            value["summary"],
+            Value::String("Sam asked about the lease [m-founder-1] [m999-invented].".to_string())
+        );
+    }
+
+    #[test]
+    fn citations_are_present_without_a_model_summary() {
+        // Rules-only runs have no summary string, but the outcome still
+        // grounds the thread with its actual IDs rather than leaving the
+        // caller with nothing.
+        let thread = thread_with(&["m-sam-1"]);
+        let outcome = ExecutionOutcome::Thread {
+            thread,
+            new_count: 0,
+            summary: None,
+        };
+        let value = outcome_json(&outcome);
+        assert_eq!(
+            value["summary_citations"],
+            Value::Array(vec![Value::String("m-sam-1".to_string())])
+        );
+        assert_eq!(value["summary"], Value::Null);
     }
 }

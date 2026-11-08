@@ -303,7 +303,7 @@ fn latest_matching<'a>(
 fn search_terms(target: &Target) -> Option<String> {
     match target {
         Target::Description { description } => Some(strip_search_prefix(description)),
-        Target::LatestFrom { sender } => Some(sender.clone()),
+        Target::LatestFrom { sender } => Some(strip_sender_needle(sender)),
         Target::Thread { thread_id } => Some(thread_id.as_str().to_string()),
         Target::Timeline => None,
     }
@@ -328,10 +328,71 @@ fn strip_search_prefix(description: &str) -> String {
         }
     }
     let text = text.trim();
-    if matches_prefix(text, "the ") {
-        return text[4..].trim().to_string();
+    let without_the = if matches_prefix(text, "the ") {
+        text[4..].trim()
+    } else {
+        text
+    };
+    strip_time_suffix(without_the).to_string()
+}
+
+/// Drop trailing natural-language time phrases ("last week", "yesterday",
+/// ...). Providers search sender/subject/body substrings and cannot filter
+/// by date without an API change, so a time phrase must not become the
+/// needle: "last week" alone becomes the empty (unfiltered recent) needle,
+/// and "Sam last week" becomes "Sam".
+///
+/// These are phrases, not query syntax. Only the time expressions in this
+/// list are treated as boilerplate.
+fn strip_time_suffix(text: &str) -> &str {
+    const SUFFIXES: [&str; 7] = [
+        "last week",
+        "last month",
+        "last year",
+        "this week",
+        "this month",
+        "yesterday",
+        "today",
+    ];
+    let mut current = text.trim().trim_end_matches('.').trim();
+    loop {
+        let mut cut = None;
+        for suffix in SUFFIXES {
+            if current.eq_ignore_ascii_case(suffix) {
+                return "";
+            }
+            if current.len() > suffix.len()
+                && current
+                    .get(current.len() - suffix.len()..)
+                    .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+                && current
+                    .get(current.len() - suffix.len() - 1..current.len() - suffix.len())
+                    .is_some_and(|separator| separator == " ")
+            {
+                cut = Some(current.len() - suffix.len());
+                break;
+            }
+        }
+        let Some(index) = cut else {
+            return current;
+        };
+        current = current[..index].trim();
     }
-    text.to_string()
+}
+
+/// Needle for a `LatestFrom` target. Sender/target resolution already cuts
+/// "Sam" at " about ", so a search for "from Sam about the lease" and one
+/// for "about the lease from Sam" both route forward as "Sam"; only a
+/// trailing time phrase ("Sam last week") would otherwise become a needle
+/// that matches nothing.
+fn strip_sender_needle(sender: &str) -> String {
+    let trimmed = sender.trim().trim_end_matches('.').trim();
+    let without_the = if matches_prefix(trimmed, "the ") {
+        trimmed[4..].trim()
+    } else {
+        trimmed
+    };
+    strip_time_suffix(without_the).to_string()
 }
 
 fn matches_prefix(text: &str, prefix: &str) -> bool {
@@ -922,6 +983,66 @@ mod tests {
         assert_eq!(
             strip_search_prefix("Look for the lease."),
             "Look for the lease"
+        );
+    }
+
+    #[test]
+    fn sender_and_topic_orderings_already_route_as_sender() {
+        // `rules::extract_target` resolves "from Sam" (cutting "Sam" at
+        // " about ") to `LatestFrom("Sam")` in both orderings, so the search
+        // needle is already "Sam" and no new parsing is needed for those.
+        let target = Target::LatestFrom {
+            sender: "Sam".to_string(),
+        };
+        assert_eq!(search_terms(&target), Some("Sam".to_string()));
+        assert_eq!(
+            search_terms(&Target::LatestFrom {
+                sender: "Sam last week".to_string(),
+            }),
+            Some("Sam".to_string())
+        );
+        assert_eq!(
+            search_terms(&Target::LatestFrom {
+                sender: "the founder".to_string(),
+            }),
+            Some("founder".to_string())
+        );
+    }
+
+    #[test]
+    fn trailing_time_phrases_do_not_become_the_needle() {
+        assert_eq!(strip_search_prefix("Search for messages last week"), "");
+        assert_eq!(
+            strip_search_prefix("Search for messages about the lease last week"),
+            "lease"
+        );
+        assert_eq!(
+            strip_search_prefix("Search for messages about the lease."),
+            "lease"
+        );
+        assert_eq!(
+            search_terms(&Target::Description {
+                description: "Search for messages last week".to_string(),
+            }),
+            Some(String::new())
+        );
+        assert_eq!(
+            search_terms(&Target::Description {
+                description: "Search for messages about the lease last week".to_string(),
+            }),
+            Some("lease".to_string())
+        );
+        assert_eq!(
+            search_terms(&Target::LatestFrom {
+                sender: "Sam last week".to_string(),
+            }),
+            Some("Sam".to_string())
+        );
+        assert_eq!(
+            search_terms(&Target::LatestFrom {
+                sender: "Sam yesterday".to_string(),
+            }),
+            Some("Sam".to_string())
         );
     }
 

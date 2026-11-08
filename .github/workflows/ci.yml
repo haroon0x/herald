@@ -124,6 +124,8 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      - name: Stub external binary for Tauri resource checks
+        run: mkdir -p apps/desktop/binaries && touch apps/desktop/binaries/herald-x86_64-unknown-linux-gnu
       - name: Format check
         working-directory: apps/desktop
         run: cargo fmt --all --check

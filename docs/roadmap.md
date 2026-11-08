@@ -96,7 +96,7 @@ These are requested and tracked, not shipped:
   token'd page in a WebView) builds and bundles on Linux as a `.deb` plus an
   AppImage with the `herald` sidecar inside — see its README for the exact
   build steps and system packages (`libwebkit2gtk-4.1-dev librsvg2-dev
-  patchelf`). Windows/macOS bundle icons are still missing.
+  patchelf`). PNG, ICO, and ICNS bundle icons are included.
 - **Post metrics.** Not implemented in Herald; the Zyquor pipeline owns posting performance.
 
 ## v1.1: IMAP, read-only (implemented, not yet live-verified)

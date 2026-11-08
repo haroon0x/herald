@@ -53,8 +53,9 @@ executable, then on `PATH` (e.g. after `cargo install --path ../agent`).
   `target/release/bundle/appimage/Herald_0.1.0_amd64.AppImage`. The `herald`
   binary is a Tauri sidecar (`bundle.externalBin`), so the shell finds it next
   to its own executable in the bundle. `binaries/` is gitignored; the sidecar
-  file name must carry the target triple. Windows/macOS icon formats
-  (`.ico`, `.icns`) are not generated yet — bundling so far is Linux only.
+  file name must carry the target triple. The bundle icon set includes PNG,
+  Windows `.ico`, and macOS `.icns` formats; the configured bundle targets
+  remain Linux-only in this build.
 - **Migrating to a native UI later** is per screen: each page behavior already
   maps to one `herald --json` command, so a screen becomes one IPC command
   behind the same approval queue. See ADR 0010.

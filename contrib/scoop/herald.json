@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "description": "Local-first communication agent",
+  "homepage": "https://github.com/haroon0x/herald",
+  "license": "AGPL-3.0-or-later",
+  "url": [
+    "https://github.com/haroon0x/herald/releases/download/v1.0.0/herald-v1.0.0-x86_64-pc-windows-msvc.zip"
+  ],
+  "hash": [
+    "REPLACE_WITH_RELEASE_SHA256_FOR_X86_64_WINDOWS"
+  ],
+  "extract_dir": "herald-v1.0.0-x86_64-pc-windows-msvc",
+  "bin": "herald.exe",
+  "checkver": {
+    "github": "https://github.com/haroon0x/herald"
+  },
+  "autoupdate": {
+    "url": "https://github.com/haroon0x/herald/releases/download/v$version/herald-v$version-x86_64-pc-windows-msvc.zip",
+    "hash": {
+      "url": "https://github.com/haroon0x/herald/releases/download/v$version/SHA256SUMS",
+      "find": "$basename",
+      "regex": "([a-f0-9]{64})"
+    }
+  }
+}

@@ -76,6 +76,16 @@ jobs:
           fi
           rm -rf "${name}"
           ls -l
+      - name: Build Debian package (Linux x86_64 only)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y dpkg-dev
+          sh contrib/debian/build-deb.sh \
+            "target/${{ matrix.target }}/release/herald" \
+            "${RELEASE_TAG}" dist
+          ls -l dist
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
@@ -100,12 +110,30 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Generate SHA256SUMS
+      - name: Generate SHA256SUMS (includes the Debian package)
         run: |
           set -euo pipefail
           cd dist
-          sha256sum herald-*.tar.gz herald-*.zip > SHA256SUMS
+          sha256sum herald-*.tar.gz herald-*.zip herald_*.deb > SHA256SUMS
           cat SHA256SUMS
+      - name: Sign SHA256SUMS (optional, minisign)
+        # Signing is opt-in: set the MINISIGN_SECRET_KEY repo secret (the
+        # contents of `minisign -G`'s minisign.key, see contrib/README.md)
+        # and, if the key has a password, MINISIGN_PASSWORD. Without the
+        # secret the step is skipped and the release ships checksums only.
+        if: secrets.MINISIGN_SECRET_KEY != ''
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
+          chmod 600 /tmp/minisign.key
+          printf '%s\n' "$MINISIGN_PASSWORD" | \
+            minisign -S -s /tmp/minisign.key -m dist/SHA256SUMS -x dist/SHA256SUMS.sig
+          rm -f /tmp/minisign.key
+          ls -l dist/SHA256SUMS.sig
       - name: Publish GitHub release
         run: |
           set -euo pipefail

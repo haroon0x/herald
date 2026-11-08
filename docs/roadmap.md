@@ -128,12 +128,24 @@ app-password account) is the owner's canary.
 
 ## v1.2: summaries and search
 
-- Thread summaries that cite message ids instead of paraphrasing without
-  attribution.
+Shipped so far (2026-11-08):
+
+- Thread summaries cite message ids. The planner's summary prompt asks for
+  `[id]` citations using only the IDs shown in the thread, and `ask` reports
+  `summary_citations` (the thread's actual IDs) in JSON and under the Summary
+  heading in text. Citations are derived from the thread, never parsed from
+  model text, so a citation-looking string the model writes stays inert.
+- Search understands "from Sam", "about the lease", and "last week" without
+  sending the mailbox to a model. Both sender/topic orderings already route
+  through `LatestFrom` target resolution; trailing time phrases
+  (`last week`, `yesterday`, and five more) are stripped so they never become
+  the substring needle. No new query syntax; provider search semantics
+  (sender/subject/body substring) are unchanged.
+
+Still open:
+
 - Local full-text search over stored metadata plus on-demand bodies, with a
   retention policy the user can see.
-- Search that understands "last week", "from Sam", and "about the lease"
-  without sending the mailbox to a model.
 - Draft quality work: tone hints, reply length, and a diff view of the proposed
   body.
 
@@ -142,13 +154,25 @@ explicit, configurable body-retention window, and it will have to be deletable.
 
 ## v1.3: packaging
 
-- Homebrew tap for macOS and Linux.
-- Scoop bucket for Windows.
-- Debian package and an AppImage or static binary for other Linux
-  distributions.
-- Signed release artifacts and checksums published next to the binaries.
-- A first-run flow that does not require reading the docs: `init`, `doctor`,
-  and a one-command demo.
+Shipped so far (2026-11-08):
+
+- Homebrew formula (`contrib/homebrew/herald.rb`), Scoop manifest
+  (`contrib/scoop/herald.json`), and a Debian `.deb` builder
+  (`contrib/debian/build-deb.sh`). The release workflow builds the `.deb`,
+  covers it in `SHA256SUMS`, and signs `SHA256SUMS` with minisign when the
+  `MINISIGN_SECRET_KEY` repo secret is set (`SHA256SUMS.sig` published next
+  to the archives). See `contrib/README.md` for the maintainer steps
+  (fill in per-archive hashes, publish the tap/bucket, generate the minisign
+  key) and for the Debian usage.
+- `install.sh` verifies `SHA256SUMS.sig` with minisign when
+  `HERALD_MINISIGN_PUB` points at the project's public key; otherwise it
+  falls back to HTTPS checksums, as documented in its header.
+
+Still open: the tap/bucket publication itself (needs an org-owned repo), the
+minisign key (needs the maintainer), the static/musl binary for other Linux
+distributions, and a first-run demo command. `herald init` prints the demo
+commands and `herald doctor` runs the full diagnosis; the demo is the fake
+provider via `herald ask`.
 
 The binary stays a single executable. Packaging must not introduce a service,
 a daemon, or an installer that writes outside the user's directories.

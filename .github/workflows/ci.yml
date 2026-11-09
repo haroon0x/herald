@@ -73,7 +73,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust 1.98.0
-        uses: dtolnay/rust-toolchain@1.98.0
+        uses: dtolnay/rust-toolchain@1.120.0
       - uses: Swatinem/rust-cache@v2
       - name: Check against the minimum supported Rust version
         run: cargo check --workspace --all-targets --locked

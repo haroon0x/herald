@@ -16,6 +16,25 @@ Only the latest `1.x` release is supported. If you are unsure whether a finding
 affects you, report it anyway and include the version output of
 `herald --version`.
 
+## Dependency advisories
+
+Both `cargo deny check` (RustSec) and GitHub Dependabot are watched. A finding is
+either fixed or recorded here with the reason it is accepted; nothing is silently
+ignored. `cargo deny check` is green as of 2026-11-12.
+
+Fixed: `libsqlite3-sys` 0.30.1 (RUSTSEC-2026-0459 / CVE-2026-119375) was bumped
+to 0.39.1 via `rusqlite` 0.41 in commit `619a488`.
+
+Open, accepted:
+
+| Advisory | Crate and path | Why it is accepted | Exit |
+| --- | --- | --- | --- |
+| GHSA-wrw7-89jp-8q8g (medium) | `glib` 0.18.5 via `apps/desktop` → `tauri` → `gtk` | Unsoundness in `glib::VariantStrIter`. The desktop shell only spawns `herald ui` and loads its page; it does not use that iterator. The fix requires gtk-rs 0.20 across the WebKitGTK stack, which no current `wry` release supports. | Next Tauri/wry bump |
+| GHSA-2326-pfpj-vx3h (low) | `lexical-core` 0.7.6 via `imap` → `nom` 5 | nom 5 compiles its `lexical` float parsers, but neither `imap` nor `imap-proto` calls them (verified: no `float`/`lexical` call sites in either crate), so the affected routines are unreachable from Herald's IMAP path. The fix requires an `imap` crate upgrade. | When a newer `imap` ships |
+
+The desktop shell is its own workspace with its own lockfile, so its advisory
+does not affect the `herald` binary or the main `Cargo.lock`.
+
 ## Reporting a vulnerability
 
 **Do not open a public issue, discussion, or pull request for a security

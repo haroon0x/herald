@@ -734,3 +734,26 @@ fn ask_with_body_env_rejects_an_empty_variable() {
     assert!(output.status.success());
     assert_eq!(data(&approvals)["count"], 0);
 }
+
+/// `reply` exists to draft from a thread, so it must say plainly that it needs
+/// a model rather than pretending the rules engine can write. And a failed
+/// draft must leave the queue and history untouched.
+#[test]
+fn reply_requires_a_model_and_queues_nothing() {
+    let env = Env::new();
+
+    let output = env.run(&["reply", "t-founder", "--provider", "fake"], &[]);
+    assert!(!output.status.success(), "reply without a model must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("needs a model"),
+        "expected a model requirement, got: {stderr}"
+    );
+
+    let (approvals, output) = env.json(&["approvals"], &[]);
+    assert!(output.status.success());
+    assert_eq!(data(&approvals)["count"], 0);
+
+    let (history, _) = env.json(&["history"], &[]);
+    assert_eq!(data(&history)["count"], 0);
+}

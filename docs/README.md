@@ -10,7 +10,7 @@ know where everything is, see [../index.md](../index.md) first.
 | --- | --- | --- |
 | 1 | [architecture.md](architecture.md) | How the system is built: crates, data flow, the type ladder, the state machine, trust boundaries. |
 | 2 | [v1-design.md](v1-design.md) | The v1.0 contract: types, provider port, storage schema, CLI surface. |
-| 3 | [providers.md](providers.md) | What `fake` and `maildir` do, how threading and Sent verification work, and what a new provider must satisfy. |
+| 3 | [providers.md](providers.md) | What each adapter does (`fake`, `maildir`, `imap`, `x`), how threading and Sent verification work, and what a new provider must satisfy. |
 | 4 | [configuration.md](configuration.md) | Every key, path, environment variable, and precedence rule. |
 | 5 | [cli.md](cli.md) | Every command, its options, human and JSON output, exit codes, and `jq` recipes. |
 | 6 | [ui.md](ui.md) | The local browser UI: start it, what each pane does, and its security properties. |
@@ -56,6 +56,8 @@ contract.
 | [0010](decisions/0010-local-web-ui.md) | Local browser UI over the CLI; Tauri shell later | Accepted |
 | [0011](decisions/0011-no-posting-lane.md) | No posting lane in Herald; Zyquor owns generation and posting | Accepted |
 | [0012](decisions/0012-imap-provider.md) | IMAP provider: read-only Gmail via app passwords, mark-on-open, no send | Accepted |
+| [0013](decisions/0013-draft-context-and-acceptance.md) | Draft from the resolved thread; record hashes and edit counts, never draft text | Accepted |
+| [0014](decisions/0014-hosted-inference-disclosure.md) | Hosted inference is disclosed in docs and `doctor`, never implied | Accepted |
 
 ## Project files
 

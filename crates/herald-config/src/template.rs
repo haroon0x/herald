@@ -82,5 +82,6 @@ threads = 4
 # action_delay_ms = 1800
 # typing_delay_ms = 20
 # close_after = true
-# read_only = true refuses every write while keeping reads working.
+# read_only = true (the default) refuses every write; reads keep working.
+# Writes are browser automation against your own session: enable them deliberately.
 "#;

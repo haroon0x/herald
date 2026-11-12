@@ -241,7 +241,12 @@ fn read_operation(operation: Operation) -> Result<ReadOperation, PlanError> {
     }
 }
 
-fn validate_target(target: &Target) -> Result<(), PlanError> {
+/// Reject a target that cannot name anything.
+///
+/// Exposed so a caller can refuse an unvalidated target before handing it to a
+/// provider for resolution (draft context is fetched before the body exists,
+/// which is before `validate_plan` can run).
+pub fn validate_target(target: &Target) -> Result<(), PlanError> {
     match target {
         Target::Description { description } if description.trim().is_empty() => {
             Err(PlanError::MissingTarget)

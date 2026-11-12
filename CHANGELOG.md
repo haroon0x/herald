@@ -10,7 +10,41 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 In progress, not yet live-canaried. Treat these as implemented and unit-tested,
 not as released behaviour until the canary in the milestone handoff passes.
 
+**Canary status, 2026-11-12.** X reads are verified against a signed-in profile
+(mentions, notifications, and the home feed parse real posts). No X reply or DM
+has ever completed — `herald history` contains no successful X write — so the
+X write path is untested against production. IMAP has not been run against a
+live account. Maildir and SMTP are covered by the automated suite only. The
+unreleased items below that say "implemented" mean exactly that.
+
 ### Added
+
+- **`herald reply <thread-id>`**: drafts one reply **from the conversation
+  itself** and, with `--enable-send`, queues the exact body for approval. The
+  thread id comes from the user, so the model writes text and never chooses a
+  target. This is the deterministic draft → approve → send loop. See
+  [ADR 0013](docs/decisions/0013-draft-context-and-acceptance.md).
+
+- **Draft context.** The draft prompt now carries the last three messages of
+  the resolved thread (4,000 characters), wrapped in `<untrusted-thread>` with
+  per-message id and sender attributes. Every interpolated untrusted value is
+  tag-neutralised, so a body cannot close the wrapper or reopen the
+  instruction block. Before this, the model wrote a reply without reading the
+  mail it answered. Tests:
+  `draft_prompt_neutralises_closing_tags_in_a_body`,
+  `draft_prompt_escapes_the_sender_attribute`.
+
+- **Draft provenance and the acceptance metric.** A model-drafted send records
+  `draft_hash` plus the added/removed word counts between the draft and the
+  queued body — hashes and counts, never the draft text. `herald doctor` reports
+  `draft acceptance` (unedited rate, and a warning below 40% once five decisions
+  exist); `--json` adds `draft_acceptance`. This is the number the roadmap is
+  gated on instead of operation-selection scores.
+
+- **`send_reply` can be drafted with `--enable-send`.** `herald ask "reply to
+  Sam saying I'll review it" --enable-send` now drafts from the thread and
+  queues an approval in one command. Without `--enable-send` behaviour is
+  unchanged: the same request still asks what to say.
 
 - **IMAP provider** (`imap`): read-only Gmail IMAP via app passwords
   (TLS via rustls). One short-lived session per operation on a blocking
@@ -44,6 +78,24 @@ not as released behaviour until the canary in the milestone handoff passes.
   are unchanged.
 
 ### Changed
+
+- **X writes are off by default.** `[x] read_only` now defaults to `true`; a
+  write needs `read_only = false` set deliberately. `herald doctor` warns when
+  it is on. Reads are unaffected.
+
+- **`herald providers` and `herald doctor` distinguish "unverified" from
+  "unavailable".** A health probe that times out now reports
+  `unverified`/`warn` instead of claiming the adapter is broken; X reads were
+  working while `providers` reported it unavailable.
+
+- **Hosted inference is disclosed.** README, FAQ, `docs/configuration.md`, and
+  the threat model now name `opencode` as a path that sends prompts to a hosted
+  model; the README no longer claims "no cloud inference". `doctor` warns on a
+  non-loopback `openai` endpoint and on `opencode`. See
+  [ADR 0014](docs/decisions/0014-hosted-inference-disclosure.md).
+
+- **Provider documentation corrected:** `x` and `imap` have adapters; `gmail`
+  is the planned enum; the FAQ table and its sample output were stale.
 
 - Herald has no posting lane and no auto-send. `create_post`, the autopost
   policy rails, the tweet quality scorer, post drafting, `herald autopost`,

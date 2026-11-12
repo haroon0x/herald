@@ -338,6 +338,29 @@ pub async fn resolve_thread(
     }
 }
 
+/// Resolve a target and read its thread for draft context.
+///
+/// This only reads: it is best-effort and returns `None` on any failure, so a
+/// draft can still be produced without context rather than failing the
+/// command. The target is validated first, so unvalidated planner output never
+/// reaches a provider.
+pub async fn thread_for_draft(
+    provider: &dyn CommunicationProvider,
+    target: &Target,
+) -> Option<Thread> {
+    if herald_core::validate_target(target).is_err() {
+        return None;
+    }
+    match target {
+        Target::Thread { thread_id } => provider.get_thread(thread_id).await.ok(),
+        Target::Description { .. } | Target::LatestFrom { .. } => {
+            let resolved = resolve_thread(provider, target).await.ok()?;
+            provider.get_thread(&resolved).await.ok()
+        }
+        Target::Timeline => None,
+    }
+}
+
 fn latest_matching<'a>(
     summaries: &'a [MessageSummary],
     sender: &str,
@@ -539,6 +562,7 @@ pub async fn queue_send(
     app: &App,
     action: &SendAction,
     action_id: &str,
+    draft: Option<&str>,
 ) -> Result<QueuedApproval, AppError> {
     let provider = app.registry.get(action.provider).ok_or_else(|| {
         AppError::new(
@@ -567,6 +591,22 @@ pub async fn queue_send(
         action_id,
         Some(&resolved),
     )?;
+
+    // Record what the model proposed, before the human decided. Hashes and
+    // word counts only: the acceptance metric never becomes a body store.
+    if let Some(draft) = draft {
+        let (added, removed) = if draft == action.body {
+            (0, 0)
+        } else {
+            diff_counts(&word_diff(draft, &action.body))
+        };
+        app.store.record_draft_provenance(
+            action_id,
+            &body_hash(draft),
+            i64::try_from(added).unwrap_or(i64::MAX),
+            i64::try_from(removed).unwrap_or(i64::MAX),
+        )?;
+    }
 
     // Review aid: diff the proposed body against the last message in the
     // resolved thread so the reviewer sees what the reply adds on top of the

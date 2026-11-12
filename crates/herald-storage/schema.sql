@@ -31,7 +31,15 @@ CREATE TABLE IF NOT EXISTS actions (
     content_hash TEXT,
     state TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    completed_at INTEGER
+    completed_at INTEGER,
+    -- Provenance of a model-drafted body. `draft_hash` is the hash of what the
+    -- model proposed; `content_hash` is what was queued. Equal hashes mean the
+    -- draft was accepted unedited. `draft_added`/`draft_removed` count the
+    -- words the user changed, never the text: the acceptance metric must not
+    -- become a second body store. All NULL when no model drafted the body.
+    draft_hash TEXT,
+    draft_added INTEGER,
+    draft_removed INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_state ON actions (state, created_at);

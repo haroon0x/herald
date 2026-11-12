@@ -35,8 +35,9 @@ only exception added since (see the in-progress section below).
 
 ## Measured, not assumed
 
-These numbers come from `docs/status-2026-11-03.md` and the eval harness. They
-measure operation selection on the 42-case set, not mail quality.
+These numbers come from `docs/status-2026-11-03.md` and the eval harness. Most
+measure operation selection on the 42-case set, not mail quality; the draft
+acceptance row is the first quality measurement and it is still unmeasured.
 
 | What | Result |
 | --- | --- |
@@ -46,7 +47,8 @@ measure operation selection on the 42-case set, not mail quality.
 | Clarification recall, original schema | 0/10 |
 | Clarification recall, flag-first schema | 10/10 loose rule, 4/10 with the specified rule and one false positive |
 | opencode free pool (glm, `--engine model`), 2026-11-07 | 35/42 (83%); fails lean `prepare_reply` where `send_reply` was expected |
-| Test suite | 231 tests now; 161 in the v1.0 tree; 62 at the 2026-11-03 snapshot |
+| Draft acceptance (unedited sends / decided drafts), 2026-11-12 | **not measured**; no real send has completed yet. `herald doctor` reports it once drafts are decided |
+| Test suite | 282 tests now; 161 in the v1.0 tree; 62 at the 2026-11-03 snapshot |
 
 Two scorer bugs were fixed before those numbers were trusted: a decline was
 being counted as a clarification, and a model error was being scored as a
@@ -58,6 +60,30 @@ as clarifying, and the model is still measured separately.
 
 The 42-case set is unchanged in v1.0. It covers intent and refusal, not Maildir
 parsing or approval correctness; those have their own tests.
+
+## Next (2026-11-12): prove the draft loop before new authority
+
+The gate is no longer an eval score. It is **draft acceptance**: of the drafts
+the model writes, how many does the user send without rewriting them? Below 20%
+after a month of real use, the model path is wrong (bigger local model, or drop
+send drafting). Above 40%, it is earning its complexity; above 60%, it is a
+product.
+
+What changed to make that measurable, and what is left:
+
+- [x] Draft from the thread: the last three messages, untrusted-wrapped, with
+  tag-neutralised delimiters ([ADR 0013](decisions/0013-draft-context-and-acceptance.md)).
+- [x] A deterministic loop: `herald reply <thread-id> [--convey TEXT] [--enable-send]`.
+- [x] Provenance and the metric: `draft_hash` and edit word counts, reported by
+  `herald doctor`; the draft text is never stored.
+- [ ] Real mail: configure Maildir (mbsync/offlineimap) or IMAP, and send 30
+  replies through the approval path.
+- [ ] Decide from the number, not from a rung: keep building only if unedited
+  acceptance clears 40%.
+
+Deliberately paused until that decision: 3/10 (the lookup), the v2.0 tool loop,
+the TUI, and encrypted sync. Each adds authority or surface; none fixes a draft
+the user does not want to send.
 
 ## In progress, unreleased: X adapter
 
@@ -78,7 +104,7 @@ design) and the owner has signed off.
 - **Not included:** post metrics (Zyquor's pipeline owns posting performance), scheduling,
   threads, likes, follows, or delete.
 
-## Next after the X canary: feed, notifications, DM list, GUI
+## Feed, notifications, DM list, GUI
 
 These are requested and tracked, not shipped:
 
@@ -241,8 +267,8 @@ make. The answer is a ladder, and each rung needs a gate.
 | Level | The model controls | Rust controls | Status |
 | --- | --- | --- | --- |
 | 1/10 | One of seven operation labels plus a yes/no clarification flag | Arguments, target resolution, validation, execution | Shipped in v1.0 |
-| 2/10 | The target phrase: what the request is about, and how to ask | Resolution, validation, execution | Next model task |
-| 3/10 | One lookup before deciding | How the lookup works, hard two-call cap | After 2/10 |
+| 2/10 | The target phrase: what the request is about, and how to ask | Resolution, validation, execution | Measured; gate failed (see "Next") |
+| 3/10 | One lookup before deciding | How the lookup works, hard two-call cap | Blocked on draft quality, not on the lookup |
 | 4/10 | A two-step loop over typed tools | Tool registry, per-call policy, cap | v2.0 |
 | 5/10 | Choosing which read tool fits the question | Tool set, argument schema, cap | v2.0 |
 | 6/10 | `ask_user` to resume a suspended turn | When suspension is legal, timeout, audit | v2.0 |
@@ -254,9 +280,28 @@ make. The answer is a ladder, and each rung needs a gate.
 Level 10 is deliberately unreachable. The last rung is the product: the model
 proposes, Rust disposes, the user approves.
 
-### Next: 2/10
+### 2/10: decided no-go as measured (2026-11-12)
 
-Recorded 2026-11-04 and measured 2026-11-07. Schema, prompt, parsing, and tests are in place; the measurement is recorded below, and the go/no-go decision remains step 6.
+Recorded 2026-11-04 and measured 2026-11-07. The schema, prompt, parsing, and
+tests are in place. The gate below failed on its own criterion, so step 6 is
+decided rather than deferred: the model does not beat the rules router at
+choosing an operation, and the target phrase it adds is not specific enough to
+carry the rung.
+
+- No regression on the 42-case classifier score: **34/42 vs 32/42**, passed.
+- `target_contains` reported for sampled cases: passed.
+- At least 70% of 20 sampled targets specific enough for the draft prompt:
+  **11/20 (55%)**, failed.
+- At least 3 cases where the model beats the regex: **13**, passed.
+
+The rules engine scores **42/42** on the same set. So at 2/10 the model is
+strictly worse than a regex at the only job it is given, and slower — opencode
+timed out at 120 seconds on some cases. The honest conclusion is that
+operation selection is a rules problem in Herald, and the model's value has to
+come from the tasks it is actually better at: summarising and writing.
+
+This does not delete the ladder; it stops pretending that more authority is the
+next rung. The active next step is below.
 
 `classifier_schema()` grew from two fields to four: `target` (a human phrase,
 never an id) and `question` (empty when not asking).
@@ -287,14 +332,10 @@ Steps:
 5. [x] Measure: **34/42** against the 32/42 baseline; **11/20** reviewed rules
    targets were marked specific; and the classifier target **beats the regex
    in 13** cases, ties in 6, and is worse in 1.
-6. [] Go/no-go for 3/10.
-
-Measured 2026-11-07 with the user's configured opencode backend: **34/42**
-against the **32/42** baseline. In the fixed 20-case review, **11 of 20**
-rules targets were marked specific and 9 were vague; the model target beats
-the rules hint in **13** cases, ties in **6**, and is worse in **1**. See
-[target-review-2026-11-07.md](target-review-2026-11-07.md). Step 6 remains
-the owner's call.
+6. [x] Go/no-go for 3/10: **no-go as measured** (2026-11-12, above). The
+   failure is on target specificity, not on the clarification flag, and the
+   rules router already wins operation selection. 3/10 stays blocked until the
+   draft loop proves itself.
 
 The earlier 0.8B measurement remains part of the historical context: the
 sidecar needed `--jinja` and thinking-off plumbing so grammar-constrained
@@ -302,18 +343,6 @@ outputs could arrive, and the pinned model regressed against the v1.0
 baseline at the time. Those details are retained in the target-review record
 and the earlier measurement notes; this step measures no planner or core
 behavior change.
-
-Gate before 3/10, all four:
-
-- No regression on the 42-case classifier score.
-- [x] `target_contains` is reported by the harness for the sampled cases.
-- At least 70% of 20 sampled targets are specific enough for the draft prompt.
-  (11/20 recorded; the threshold judgment is the owner's call.)
-- At least 3 cases where the model beats the regex, meaning requests with no
-  " from " phrase. (13 recorded.)
-
-If the last two fail on the 0.8B, upgrade the model before 3/10 rather than
-tuning the prompt.
 
 Out of scope for 2/10: lookup steps, a tool registry, loops, memory, and any
 change to `validate_plan`, `authorize`, the state machine, or the rules router.

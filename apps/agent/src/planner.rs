@@ -91,23 +91,23 @@ impl Model {
     /// Tier 3: draft a reply body. Plain text in, plain text out, no JSON.
     /// The tone hint and length come from `[draft]` config; both are model
     /// guidance only, never gates.
+    ///
+    /// `thread` is the conversation the reply belongs to. When it is present
+    /// the prompt carries its last few messages as untrusted data, which is
+    /// what turns a generic reply into an answer; when it is absent the
+    /// historical context-free prompt is used.
     pub async fn draft(
         &self,
+        thread: Option<&Thread>,
         addressed_to: &str,
         intent: &str,
         tone: Option<&str>,
         length: DraftLength,
     ) -> Result<String, AppError> {
-        let user = format!(
-            "<reply-to>\n{addressed_to}\n</reply-to>\n<convey>\n{}\n</convey>",
-            intent.trim()
-        );
+        let (system, user) =
+            herald_core::intent::draft_prompt(thread, addressed_to, intent, tone, length);
         self.backend
-            .complete_text(
-                &herald_core::intent::draft_system(tone, length),
-                &user,
-                DRAFT_MAX_TOKENS,
-            )
+            .complete_text(&system, &user, DRAFT_MAX_TOKENS)
             .await
             .map_err(|error| AppError::new("model", format!("drafting failed: {error}")))
     }
@@ -293,7 +293,13 @@ pub fn plan_from_classification(
     }
 }
 
-/// Fill in the body of an unquoted reply plan with the draft model.
+/// Fill in the body of a reply plan that did not quote one with the draft
+/// model.
+///
+/// `thread` is the resolved conversation, when one could be read: it is what
+/// the model actually replies to. `allow_send` gates drafting for
+/// `send_reply`, so a send request with no body still asks the user what to
+/// say unless sending is enabled for this run.
 ///
 /// This is still a plan; the caller validates it and the policy still decides.
 pub async fn draft_missing_body(
@@ -301,27 +307,43 @@ pub async fn draft_missing_body(
     plan: &mut ActionPlan,
     instruction: &str,
     draft: &DraftSettings,
+    thread: Option<&Thread>,
+    allow_send: bool,
 ) {
     if plan.needs_clarification || plan.reply_body.is_some() {
         return;
     }
 
-    if plan.operation == Operation::PrepareReply {
-        match model
-            .draft(
-                &plan.target.describe(),
-                instruction,
-                draft.tone.as_deref(),
-                draft.length,
-            )
-            .await
-        {
-            Ok(body) if !body.trim().is_empty() => {
-                plan.reply_body = Some(body.trim().to_string());
-            }
-            Ok(_) => tracing::warn!("the model returned an empty draft"),
-            Err(error) => tracing::warn!(%error, "drafting failed"),
+    let should_draft = match plan.operation {
+        Operation::PrepareReply => true,
+        Operation::SendReply => allow_send,
+        _ => false,
+    };
+    if !should_draft {
+        return;
+    }
+
+    // Address the last message's sender when the thread is known; otherwise
+    // fall back to the plan's own description, as before.
+    let addressed_to = thread
+        .and_then(|thread| thread.messages.last())
+        .map_or_else(|| plan.target.describe(), |message| message.sender.clone());
+
+    match model
+        .draft(
+            thread,
+            &addressed_to,
+            instruction,
+            draft.tone.as_deref(),
+            draft.length,
+        )
+        .await
+    {
+        Ok(body) if !body.trim().is_empty() => {
+            plan.reply_body = Some(body.trim().to_string());
         }
+        Ok(_) => tracing::warn!("the model returned an empty draft"),
+        Err(error) => tracing::warn!(%error, "drafting failed"),
     }
 }
 
@@ -623,13 +645,16 @@ mod tests {
     /// An [`Inference`] double that records every system prompt it is handed
     /// and answers with a canned reply. Proves tone/length hints reach the
     /// actual draft prompt, not just a builder function.
+    /// Everything the model was handed, as `(system, user)` pairs.
+    type Captured = Arc<Mutex<Vec<(String, String)>>>;
+
     #[derive(Debug)]
     struct CapturingBackend {
-        prompts: Arc<Mutex<Vec<String>>>,
+        prompts: Captured,
     }
 
     impl CapturingBackend {
-        fn capturing() -> (Arc<Mutex<Vec<String>>>, Self) {
+        fn capturing() -> (Captured, Self) {
             let prompts = Arc::new(Mutex::new(Vec::new()));
             let backend = Self {
                 prompts: prompts.clone(),
@@ -653,10 +678,13 @@ mod tests {
         async fn complete_text(
             &self,
             system: &str,
-            _user: &str,
+            user: &str,
             _max_tokens: u16,
         ) -> Result<String, herald_runtime::RuntimeError> {
-            self.prompts.lock().expect("mutex").push(system.to_string());
+            self.prompts
+                .lock()
+                .expect("mutex")
+                .push((system.to_string(), user.to_string()));
             Ok("Drafted body.".to_string())
         }
     }
@@ -679,7 +707,7 @@ mod tests {
             needs_clarification: false,
             clarification_question: None,
         };
-        draft_missing_body(&model, &mut plan, "say thanks", &settings).await;
+        draft_missing_body(&model, &mut plan, "say thanks", &settings, None, false).await;
 
         let action = validate_plan(plan).unwrap();
         let Action::Draft(draft) = action else {
@@ -689,13 +717,13 @@ mod tests {
         {
             let seen = prompts.lock().expect("mutex");
             assert_eq!(seen.len(), 1);
+            let system = &seen[0].0;
             assert!(
-                seen[0].contains("Tone hint: warm and brief."),
-                "got: {}",
-                seen[0]
+                system.contains("Tone hint: warm and brief."),
+                "got: {system}"
             );
-            assert!(seen[0].contains("1 sentence"), "got: {}", seen[0]);
-            assert!(!seen[0].contains("1-3 sentences"), "got: {}", seen[0]);
+            assert!(system.contains("1 sentence"), "got: {system}");
+            assert!(!system.contains("1-3 sentences"), "got: {system}");
         }
 
         // A quoted body is never overwritten by the model.
@@ -709,7 +737,7 @@ mod tests {
             needs_clarification: false,
             clarification_question: None,
         };
-        draft_missing_body(&model, &mut plan, "say thanks", &settings).await;
+        draft_missing_body(&model, &mut plan, "say thanks", &settings, None, false).await;
         assert_eq!(plan.reply_body.as_deref(), Some("Exact words."));
         assert_eq!(prompts.lock().expect("mutex").len(), 1, "no second call");
     }
@@ -719,25 +747,110 @@ mod tests {
         let (prompts, backend) = CapturingBackend::capturing();
         let model = Model::new(Box::new(backend));
         model
-            .draft("the founder", "say thanks", Some("warm"), DraftLength::Long)
+            .draft(
+                None,
+                "the founder",
+                "say thanks",
+                Some("warm"),
+                DraftLength::Long,
+            )
             .await
             .unwrap();
         {
             let seen = prompts.lock().expect("mutex");
             assert_eq!(seen.len(), 1);
-            assert!(seen[0].contains("Tone hint: warm."), "got: {}", seen[0]);
-            assert!(seen[0].contains("3-6 sentences"), "got: {}", seen[0]);
+            assert!(seen[0].0.contains("Tone hint: warm."), "got: {}", seen[0].0);
+            assert!(seen[0].0.contains("3-6 sentences"), "got: {}", seen[0].0);
         }
 
         // Defaults add no tone line and keep the historical guidance.
         let (prompts, backend) = CapturingBackend::capturing();
         Model::new(Box::new(backend))
-            .draft("the founder", "say thanks", None, DraftLength::Default)
+            .draft(
+                None,
+                "the founder",
+                "say thanks",
+                None,
+                DraftLength::Default,
+            )
             .await
             .unwrap();
         let seen = prompts.lock().expect("mutex");
         assert_eq!(seen.len(), 1);
-        assert!(!seen[0].contains("Tone hint:"), "got: {}", seen[0]);
-        assert!(seen[0].contains("1-3 sentences"), "got: {}", seen[0]);
+        assert!(!seen[0].0.contains("Tone hint:"), "got: {}", seen[0].0);
+        assert!(seen[0].0.contains("1-3 sentences"), "got: {}", seen[0].0);
+    }
+
+    /// The whole point of the change: the draft request carries the thread.
+    /// Without this the model writes a reply to a subject line.
+    #[tokio::test]
+    async fn draft_missing_body_sends_the_resolved_thread_to_the_model() {
+        let (prompts, backend) = CapturingBackend::capturing();
+        let model = Model::new(Box::new(backend));
+        let settings = DraftSettings::default();
+        let thread = Thread {
+            id: herald_core::ThreadId::new("t1"),
+            provider: ProviderId::Fake,
+            subject: "Thursday".to_string(),
+            messages: vec![herald_core::ProviderMessage {
+                id: herald_core::MessageId::new("m1"),
+                thread_id: herald_core::ThreadId::new("t1"),
+                sender: "Sam".to_string(),
+                subject: "Thursday".to_string(),
+                body: herald_core::Untrusted("The Thursday demo slipped to Friday.".to_string()),
+                timestamp_ms: 1,
+                unread: false,
+            }],
+        };
+        let mut plan = ActionPlan {
+            provider: ProviderId::Fake,
+            operation: Operation::SendReply,
+            target: Target::Thread {
+                thread_id: herald_core::ThreadId::new("t1"),
+            },
+            reply_body: None,
+            needs_clarification: false,
+            clarification_question: None,
+        };
+
+        // A send with no quoted body asks what to say unless sending is enabled.
+        draft_missing_body(
+            &model,
+            &mut plan,
+            "acknowledge",
+            &settings,
+            Some(&thread),
+            false,
+        )
+        .await;
+        assert!(plan.reply_body.is_none(), "no draft without --enable-send");
+
+        draft_missing_body(
+            &model,
+            &mut plan,
+            "acknowledge",
+            &settings,
+            Some(&thread),
+            true,
+        )
+        .await;
+        assert_eq!(plan.reply_body.as_deref(), Some("Drafted body."));
+
+        let seen = prompts.lock().expect("mutex");
+        assert_eq!(seen.len(), 1, "only the enabled call reaches the model");
+        let (system, user) = &seen[0];
+        assert!(system.contains("untrusted-thread"), "got: {system}");
+        assert!(
+            user.contains("<untrusted-thread subject=\"Thursday\">"),
+            "got: {user}"
+        );
+        assert!(
+            user.contains("The Thursday demo slipped to Friday."),
+            "the thread body should be in the prompt: {user}"
+        );
+        assert!(
+            user.contains("sender=\"Sam\""),
+            "addressed to the sender: {user}"
+        );
     }
 }

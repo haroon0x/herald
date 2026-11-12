@@ -28,7 +28,7 @@ pub async fn run(
     thread_override: Option<&str>,
     body_env: Option<&str>,
 ) -> Result<u8, AppError> {
-    let (provider, _adapter) = resolve_provider(app, provider_override)?;
+    let (provider, adapter) = resolve_provider(app, provider_override)?;
     let model = model_for(app, engine).await?;
 
     let planned = planner::plan(engine, model.as_ref(), provider, instruction).await?;
@@ -48,6 +48,8 @@ pub async fn run(
             thread_id: ThreadId::new(thread),
         };
     }
+
+    let mut drafted: Option<String> = None;
     if let Some(var) = body_env {
         // A caller that already holds the exact body (the UI) supplies it via
         // the environment, never argv. Empty or missing is an error.
@@ -66,16 +68,72 @@ pub async fn run(
         }
         plan.reply_body = Some(body);
     } else if let Some(model) = model.as_ref() {
-        planner::draft_missing_body(model, &mut plan, instruction, &app.config.draft).await;
+        // Give the drafter the conversation. This is a read, it is
+        // best-effort, and the target is validated before it reaches a
+        // provider; a thread that cannot be read falls back to the
+        // context-free prompt.
+        let thread = match adapter.as_deref() {
+            Some(adapter)
+                if !plan.needs_clarification
+                    && plan.reply_body.is_none()
+                    && plan.operation.needs_body() =>
+            {
+                send::thread_for_draft(adapter, &plan.target).await
+            }
+            _ => None,
+        };
+        let supplied = plan.reply_body.clone();
+        planner::draft_missing_body(
+            model,
+            &mut plan,
+            instruction,
+            &app.config.draft,
+            thread.as_ref(),
+            enable_send,
+        )
+        .await;
+        if plan.reply_body != supplied {
+            drafted = plan.reply_body.clone();
+            if thread.is_none() {
+                // Never pretend a blind draft answered the conversation.
+                app.out
+                    .warn("draft written without thread context; the target could not be read");
+            }
+        }
     }
 
+    execute_plan(
+        app,
+        plan,
+        model.as_ref(),
+        enable_send,
+        drafted.as_deref(),
+        "ask",
+    )
+    .await
+}
+
+/// Validate, authorize, and run one plan — the shared tail of `ask` and
+/// `reply`.
+///
+/// `drafted` is the body the model proposed, when there was one, so the
+/// approval queue can record provenance. `command` is the `--json` envelope
+/// key. Nothing here bypasses validation or policy.
+pub async fn execute_plan(
+    app: &App,
+    plan: herald_core::ActionPlan,
+    model: Option<&Model>,
+    enable_send: bool,
+    drafted: Option<&str>,
+    command: &str,
+) -> Result<u8, AppError> {
     let action = match validate_plan(plan) {
         Ok(action) => action,
         Err(PlanError::ClarificationRequired(question)) => {
-            return Ok(clarification(app, "ask", &question));
+            return Ok(clarification(app, command, &question));
         }
         Err(PlanError::MissingReplyBody { .. }) => {
-            return Ok(clarification(app, "ask", "What should the reply say?"));
+            return Ok(clarification(app, command, "What should the reply say?"));
         }
         Err(error) => {
             return Err(AppError::new("invalid_plan", error.to_string()));
@@ -90,12 +148,12 @@ pub async fn run(
         Decision::Allowed => {
             let id = action_id();
             send::record_action(app, &action, &id, None)?;
-            let outcome = send::execute_allowed(app, &action, &id, model.as_ref()).await?;
+            let outcome = send::execute_allowed(app, &action, &id, model).await?;
             print_outcome(app, &outcome);
 
             app.out.blank();
             app.out.data(
-                "ask",
+                command,
                 json!({
                     "status": "succeeded",
                     "action_id": id,
@@ -107,7 +165,7 @@ pub async fn run(
             );
             Ok(0)
         }
-        Decision::NeedsApproval(request) => {
+        Decision::NeedsApproval(_) => {
             let Action::Send(send_action) = &action else {
                 return Err(AppError::new(
                     "internal",
@@ -115,56 +173,8 @@ pub async fn run(
                 ));
             };
             let id = action_id();
-            let queued = send::queue_send(app, send_action, &id).await?;
-
-            app.out.blank();
-            app.out.heading("Approval required");
-            app.out.field("action", &queued.action_id);
-            app.out.field("provider", queued.provider);
-            app.out.field("target", &queued.target);
-            app.out.field("thread", &queued.thread_id);
-            app.out.field("body", &request.body);
-            app.out.field("hash", &request.body_hash);
-            let stats = send::body_stats(&queued.body);
-            app.out.field(
-                "length",
-                format!("{} words, {} chars", stats.words, stats.chars),
-            );
-            if let Some(diff) = &queued.diff {
-                let (added, removed) = send::diff_counts(diff);
-                app.out.field(
-                    "diff",
-                    format!("vs last message: +{added} −{removed} words"),
-                );
-            }
-            app.out
-                .field("expires", format_time_ms(queued.expires_at_ms));
-            app.out.blank();
-            app.out
-                .line("Nothing has been sent. To send exactly this body:");
-            app.out
-                .line(format!("  herald approve {}", queued.action_id));
-            app.out.line("To discard it:");
-            app.out
-                .line(format!("  herald reject {}", queued.action_id));
-
-            app.out.data(
-                "ask",
-                json!({
-                    "status": "awaiting_approval",
-                    "action_id": queued.action_id,
-                    "provider": queued.provider,
-                    "operation": operation_name(&action),
-                    "target": queued.target,
-                    "thread_id": queued.thread_id,
-                    "body": queued.body,
-                    "body_hash": queued.body_hash,
-                    "words": stats.words,
-                    "chars": stats.chars,
-                    "diff": queued.diff,
-                    "expires_at_ms": queued.expires_at_ms,
-                }),
-            );
+            let queued = send::queue_send(app, send_action, &id, drafted).await?;
+            print_queued_approval(app, command, &action, &queued, drafted.is_some());
             Ok(0)
         }
         Decision::Rejected(reason) => {
@@ -179,6 +189,66 @@ pub async fn run(
     }
 }
 
+/// Print a queued approval: the exact body, its hash, what changed, and the
+/// two commands that can decide it. Shared so `ask` and `reply` cannot drift.
+fn print_queued_approval(
+    app: &App,
+    command: &str,
+    action: &Action,
+    queued: &send::QueuedApproval,
+    drafted: bool,
+) {
+    app.out.blank();
+    app.out.heading("Approval required");
+    app.out.field("action", &queued.action_id);
+    app.out.field("provider", queued.provider);
+    app.out.field("target", &queued.target);
+    app.out.field("thread", &queued.thread_id);
+    app.out.field("body", &queued.body);
+    app.out.field("hash", &queued.body_hash);
+    let stats = send::body_stats(&queued.body);
+    app.out.field(
+        "length",
+        format!("{} words, {} chars", stats.words, stats.chars),
+    );
+    if let Some(diff) = &queued.diff {
+        let (added, removed) = send::diff_counts(diff);
+        app.out.field(
+            "diff",
+            format!("vs last message: +{added} −{removed} words"),
+        );
+    }
+    app.out
+        .field("expires", format_time_ms(queued.expires_at_ms));
+    app.out.blank();
+    app.out
+        .line("Nothing has been sent. To send exactly this body:");
+    app.out
+        .line(format!("  herald approve {}", queued.action_id));
+    app.out.line("To discard it:");
+    app.out
+        .line(format!("  herald reject {}", queued.action_id));
+
+    app.out.data(
+        command,
+        json!({
+            "status": "awaiting_approval",
+            "action_id": queued.action_id,
+            "provider": queued.provider,
+            "operation": operation_name(action),
+            "target": queued.target,
+            "thread_id": queued.thread_id,
+            "body": queued.body,
+            "body_hash": queued.body_hash,
+            "words": stats.words,
+            "chars": stats.chars,
+            "diff": queued.diff,
+            "expires_at_ms": queued.expires_at_ms,
+            "drafted": drafted,
+        }),
+    );
+}
+
 /// Dry run: plan, validate, and show the policy decision. No writes.
 pub async fn dry_run(
     app: &App,
@@ -188,7 +258,7 @@ pub async fn dry_run(
     enable_send: bool,
     thread_override: Option<&str>,
 ) -> Result<u8, AppError> {
-    let (provider, _adapter) = resolve_provider(app, provider_override)?;
+    let (provider, adapter) = resolve_provider(app, provider_override)?;
     let model = model_for(app, engine).await?;
 
     let planned = planner::plan(engine, model.as_ref(), provider, instruction).await?;
@@ -205,7 +275,25 @@ pub async fn dry_run(
         };
     }
     if let Some(model) = model.as_ref() {
-        planner::draft_missing_body(model, &mut plan, instruction, &app.config.draft).await;
+        let thread = match adapter.as_deref() {
+            Some(adapter)
+                if !plan.needs_clarification
+                    && plan.reply_body.is_none()
+                    && plan.operation.needs_body() =>
+            {
+                send::thread_for_draft(adapter, &plan.target).await
+            }
+            _ => None,
+        };
+        planner::draft_missing_body(
+            model,
+            &mut plan,
+            instruction,
+            &app.config.draft,
+            thread.as_ref(),
+            enable_send,
+        )
+        .await;
     }
 
     let action = match validate_plan(plan) {

@@ -10,6 +10,7 @@ pub mod inbox;
 pub mod init;
 pub mod model;
 pub mod providers;
+pub mod reply;
 pub mod x;
 
 use std::sync::Arc;
@@ -40,6 +41,23 @@ pub async fn dispatch(app: &App, command: Command) -> Result<u8, AppError> {
                 enable_send,
                 thread.as_deref(),
                 body_env.as_deref(),
+            )
+            .await
+        }
+        Command::Reply {
+            id,
+            convey,
+            provider,
+            engine,
+            enable_send,
+        } => {
+            reply::run(
+                app,
+                &id,
+                convey.as_deref(),
+                provider.as_deref(),
+                engine,
+                enable_send,
             )
             .await
         }

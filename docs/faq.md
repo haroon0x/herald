@@ -43,16 +43,25 @@ the exact outbound body until you approve, reject, or it expires.
 By default: nothing. There is no telemetry, no update check, and no
 Herald-operated server.
 
-Three things can leave, and each requires configuration:
+Four things can leave, and each requires configuration:
 
 | What | When | Where |
 | --- | --- | --- |
 | A reply you approved | You run `herald approve` | Your SMTP server |
 | A model prompt | `[model] backend = "openai"` with a non-local `endpoint` | That endpoint |
+| A model prompt | `[model] backend = "opencode"` (the default model id is a hosted model) | The model provider behind `opencode` |
 | A model download | You run `herald model download` | The pinned host, over HTTPS |
 
 The Maildir read path is local file I/O. The `fake` provider never touches the
-network.
+network. `backend = "none"` (the default) starts no model process at all, and
+`backend = "managed"` keeps every prompt on loopback.
+
+**Read the backend before trusting the word "local".** `opencode` is a local
+CLI that talks to a hosted model by default; it is convenient and it is not
+private. If message content must not leave the machine, use `managed` (a
+pinned GGUF served by `llama-server` on 127.0.0.1) and leave `opencode` and
+`openai` unset. `herald doctor` prints the selected backend and endpoint so the
+choice is visible rather than assumed.
 
 ## Can it work offline?
 
@@ -64,19 +73,26 @@ Yes, for everything except sending.
 - SMTP send: needs a network path to your submission server.
 - OpenAI-compatible backend: needs whatever that endpoint needs.
 
-## Which mail providers work?
+## Which providers work?
 
-v1 ships two: `fake` (seeded demo inbox) and `maildir` (local Maildir plus
-SMTP). `gmail` and `x` are enum variants marked planned. They have no adapter,
-and the CLI says so instead of pretending.
+Three adapters are implemented and one is a planned enum:
+
+| Provider | What it does | Sends |
+| --- | --- | --- |
+| `fake` | Seeded in-memory demo inbox | Fake receipt, no network |
+| `maildir` | Local Maildir reads plus SMTP with a verified Sent copy | Yes, after approval |
+| `imap` | Read-only Gmail/Outlook via app passwords | No (`NotConfigured`) |
+| `x` | Mentions, feed, notifications, DM list over a dedicated Chrome profile | Approval-gated, and `read_only = true` by default |
+| `gmail` | Planned enum with no adapter | Nothing; plans are inert |
 
 ```console
 $ herald providers
 PROVIDER   STATUS             DEFAULT  DETAIL
-fake       ready                       adapter available
-maildir    ready              *          adapter available
+fake       ready              *
+maildir    not configured              adapter exists but is not configured
+imap       not configured              adapter exists but is not configured
+x          unverified                    provider request timed out; a read may still work
 gmail      planned                      no adapter in this build; plans are inert
-x          planned                      no adapter in this build; plans are inert
 ```
 
 ## Why Maildir and not IMAP yet?

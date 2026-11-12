@@ -1,10 +1,11 @@
 # Providers
 
 A provider is an adapter between Herald's typed actions and one place where
-messages live. v1 ships three: `fake` for demos, tests, and evals, `maildir`
-for real local mail, and `x` for mentions, DMs, the home feed, notifications,
-and approval-gated replies/DMs through a dedicated browser profile. `gmail`
-exists as an enum variant and is explicitly not implemented.
+messages live. Four adapters ship: `fake` for demos, tests, and evals, `maildir`
+for real local mail, `imap` for read-only cloud mail, and `x` for mentions,
+DMs, the home feed, notifications, and approval-gated replies/DMs through a
+dedicated browser profile. `gmail` exists as an enum variant and is explicitly
+not implemented.
 
 Every provider implements the same capability port:
 

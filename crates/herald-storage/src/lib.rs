@@ -16,7 +16,7 @@ use herald_core::{
 pub use herald_core::ActionState;
 
 const SCHEMA: &str = include_str!("../schema.sql");
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -114,6 +114,31 @@ pub struct PendingApproval {
     pub expires_at_ms: i64,
 }
 
+/// How model drafts fared once a human decided on them.
+///
+/// Derived from hashes and word counts only, never from retained text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftAcceptance {
+    /// Decided send actions that carried a model draft.
+    pub drafted: u32,
+    /// Sent with the model's exact words.
+    pub unedited: u32,
+    /// Sent after the user changed words.
+    pub edited: u32,
+    /// Drafted, then rejected, cancelled, or failed.
+    pub abandoned: u32,
+    /// Words added plus removed across the edited sends.
+    pub edit_words: u32,
+}
+
+impl DraftAcceptance {
+    /// Share of decided drafts sent unchanged. `None` before any decision.
+    #[must_use]
+    pub fn unedited_rate(&self) -> Option<f64> {
+        (self.drafted > 0).then(|| f64::from(self.unedited) / f64::from(self.drafted))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditEvent {
     pub action_id: Option<String>,
@@ -151,6 +176,9 @@ impl Store {
             ensure_column(&conn, "actions", "thread_id", "thread_id TEXT")?;
             ensure_column(&conn, "actions", "target_json", "target_json TEXT")?;
             ensure_column(&conn, "pending_approvals", "diff_json", "diff_json TEXT")?;
+            ensure_column(&conn, "actions", "draft_hash", "draft_hash TEXT")?;
+            ensure_column(&conn, "actions", "draft_added", "draft_added INTEGER")?;
+            ensure_column(&conn, "actions", "draft_removed", "draft_removed INTEGER")?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         }
         Ok(Self { conn })
@@ -251,11 +279,70 @@ impl Store {
         Ok(next)
     }
 
+    /// Record what the model proposed for a send, before the human decided.
+    ///
+    /// Stores hashes and word counts, never the draft text: the acceptance
+    /// metric must not become a second body store. Called once, right after
+    /// the action row exists.
+    pub fn record_draft_provenance(
+        &self,
+        action_id: &str,
+        draft_hash: &str,
+        added: i64,
+        removed: i64,
+    ) -> Result<(), StorageError> {
+        let updated = self.conn.execute(
+            "UPDATE actions SET draft_hash = ?2, draft_added = ?3, draft_removed = ?4
+             WHERE action_id = ?1",
+            params![action_id, draft_hash, added, removed],
+        )?;
+        if updated == 0 {
+            return Err(StorageError::ActionNotFound(action_id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// How model drafts fared once a human decided on them.
+    ///
+    /// This is the product metric the roadmap is gated on: a draft sent
+    /// unchanged saved the user the writing. `uncertain` sends are excluded
+    /// from every bucket because their delivery is unknown.
+    pub fn draft_acceptance(&self) -> Result<DraftAcceptance, StorageError> {
+        self.conn
+            .query_row(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN state IN ('succeeded','failed','cancelled')
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN state = 'succeeded' AND draft_hash = content_hash
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN state = 'succeeded' AND draft_hash <> content_hash
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN state IN ('failed','cancelled')
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN state = 'succeeded'
+                        THEN COALESCE(draft_added, 0) + COALESCE(draft_removed, 0)
+                        ELSE 0 END), 0)
+                 FROM actions
+                 WHERE draft_hash IS NOT NULL AND operation = 'send_reply'",
+                [],
+                |row| {
+                    Ok(DraftAcceptance {
+                        drafted: count(row, 0)?,
+                        unedited: count(row, 1)?,
+                        edited: count(row, 2)?,
+                        abandoned: count(row, 3)?,
+                        edit_words: count(row, 4)?,
+                    })
+                },
+            )
+            .map_err(StorageError::from)
+    }
+
     pub fn recent_actions(&self, limit: usize) -> Result<Vec<ActionRecord>, StorageError> {
         let mut statement = self.conn.prepare(
             "SELECT action_id, provider, operation, target, target_json, thread_id,
                     content_hash, state, created_at, completed_at
-             FROM actions ORDER BY created_at DESC LIMIT ?1",
+             FROM actions ORDER BY created_at DESC, rowid DESC LIMIT ?1",
         )?;
 
         let rows = statement.query_map(
@@ -513,6 +600,12 @@ fn action_from_row(row: ActionRow) -> Result<ActionRecord, StorageError> {
     })
 }
 
+/// Read a non-negative SQLite count into the metric's `u32` shape.
+fn count(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u32> {
+    let value: i64 = row.get(index)?;
+    Ok(u32::try_from(value).unwrap_or(u32::MAX))
+}
+
 type ApprovalRow = (
     String,
     String,
@@ -609,6 +702,125 @@ mod tests {
         assert!(store.record_message(&message("m1")).unwrap());
         assert!(!store.record_message(&message("m1")).unwrap());
         assert_eq!(store.message_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn recent_actions_breaks_timestamp_ties_by_insertion_order() {
+        let store = Store::open_in_memory().unwrap();
+        for id in ["a1", "a2"] {
+            let mut record = new_action(id, ProviderId::Fake, "send_reply", "t", None);
+            record.created_at_ms = 1_000;
+            store.create_action(&record).unwrap();
+        }
+        let actions = store.recent_actions(10).unwrap();
+        assert_eq!(actions[0].action_id, "a2");
+        assert_eq!(actions[1].action_id, "a1");
+    }
+
+    /// A database written by an earlier build must gain the draft columns
+    /// rather than failing at the first send. This is the upgrade path a user
+    /// actually walks, so it gets a test.
+    #[test]
+    fn an_older_database_gains_the_draft_columns() {
+        let path = std::env::temp_dir().join(format!("herald-migrate-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE actions (
+                    action_id TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    target_json TEXT,
+                    thread_id TEXT,
+                    content_hash TEXT,
+                    state TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    completed_at INTEGER
+                 );
+                 PRAGMA user_version = 4;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        let record = new_action("a1", ProviderId::Fake, "send_reply", "t", Some("h".into()));
+        store.create_action(&record).unwrap();
+        store.record_draft_provenance("a1", "d", 1, 2).unwrap();
+        // Planned, not decided: the columns exist and the metric stays empty.
+        assert_eq!(store.draft_acceptance().unwrap().drafted, 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn draft_acceptance_counts_unedited_edited_and_abandoned() {
+        let store = Store::open_in_memory().unwrap();
+        let add = |id: &str, content: &str| {
+            let mut record = new_action(
+                id,
+                ProviderId::Fake,
+                "send_reply",
+                "latest from Sam",
+                Some(content.to_string()),
+            );
+            record.thread_id = Some(ThreadId::new("t1"));
+            store.create_action(&record).unwrap();
+        };
+        let finish = |id: &str, state: ActionState| {
+            store
+                .transition_action(id, ActionState::AwaitingApproval)
+                .unwrap();
+            if state == ActionState::Cancelled {
+                store.transition_action(id, state).unwrap();
+                return;
+            }
+            store.transition_action(id, ActionState::Executing).unwrap();
+            store.transition_action(id, state).unwrap();
+        };
+
+        // Unedited: the model's hash and the sent hash match.
+        add("a1", "hash-unedited");
+        store
+            .record_draft_provenance("a1", "hash-unedited", 0, 0)
+            .unwrap();
+        finish("a1", ActionState::Succeeded);
+
+        // Edited: two words added, one removed.
+        add("a2", "hash-edited");
+        store
+            .record_draft_provenance("a2", "hash-draft", 2, 1)
+            .unwrap();
+        finish("a2", ActionState::Succeeded);
+
+        // Abandoned before sending.
+        add("a3", "hash-abandoned");
+        store
+            .record_draft_provenance("a3", "hash-abandoned", 0, 0)
+            .unwrap();
+        finish("a3", ActionState::Cancelled);
+
+        // No draft: a human-typed body never enters the metric.
+        add("a4", "hash-human");
+        finish("a4", ActionState::Succeeded);
+
+        let acceptance = store.draft_acceptance().unwrap();
+        assert_eq!(acceptance.drafted, 3);
+        assert_eq!(acceptance.unedited, 1);
+        assert_eq!(acceptance.edited, 1);
+        assert_eq!(acceptance.abandoned, 1);
+        assert_eq!(acceptance.edit_words, 3);
+        let rate = acceptance.unedited_rate().unwrap();
+        assert!((rate - 1.0 / 3.0).abs() < 1e-9, "got {rate}");
+    }
+
+    #[test]
+    fn draft_provenance_on_an_unknown_action_is_an_error() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(matches!(
+            store.record_draft_provenance("missing", "hash", 0, 0),
+            Err(StorageError::ActionNotFound(_))
+        ));
+        assert!(store.draft_acceptance().unwrap().unedited_rate().is_none());
     }
 
     #[test]

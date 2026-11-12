@@ -377,9 +377,11 @@ at once:
 Tier 1 asks one question with four fields: the flag, the operation, and the
 target phrase and question the model may name better than the regex does. The
 two phrases are only hints; an empty one falls back to `rules::target_hint` and
-validation still gates everything. Tier 3 is plain text with no JSON,
-and every message in a summary prompt is wrapped as untrusted. Tier 2 never
-involves the model. This split is why a 0.8B model is usable: it is a
+validation still gates everything. Tier 3 is plain text with no JSON. Summaries
+and drafts both receive content only after Rust has read it, wrapped in an
+untrusted block whose delimiters untrusted text cannot close; a draft is built
+after target resolution, so the model answers the actual conversation rather
+than its description. Tier 2 never involves the model. This split is why a 0.8B model is usable: it is a
 classifier and a writer, not an agent. There is no post drafting: Herald does
 not generate or publish tweets; that pipeline lives in Zyquor (ADR 0011).
 

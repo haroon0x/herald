@@ -18,6 +18,7 @@ use clap_complete::Shell;
     after_help = "Examples:\n  \
                   herald ask \"check what is unread\"\n  \
                   herald ask 'send exactly: \"Thanks, I will review this.\"' --enable-send\n  \
+                  herald reply t-founder --convey \"say I will review it\"\n  \
                   herald approvals\n  \
                   herald approve <action-id>\n\n\
                   Docs: https://github.com/haroon0x/herald"
@@ -76,6 +77,23 @@ pub enum Command {
         /// For callers that already hold the body (the UI); empty or unset is an error.
         #[arg(long, value_name = "VAR")]
         body_env: Option<String>,
+    },
+    /// Draft a reply to one thread; queue it for approval only with --enable-send.
+    Reply {
+        /// Thread id, as shown by `herald inbox`.
+        id: String,
+        /// What the reply should convey. The thread itself is the context.
+        #[arg(long)]
+        convey: Option<String>,
+        /// Provider override: fake, maildir, imap, x.
+        #[arg(long)]
+        provider: Option<String>,
+        /// rules (deterministic only), auto (rules then model), model.
+        #[arg(long, value_enum, default_value_t = EngineArg::Auto)]
+        engine: EngineArg,
+        /// Queue an approval for the drafted body instead of only printing it.
+        #[arg(long)]
+        enable_send: bool,
     },
     /// Dry run: show the validated plan and policy decision. No writes.
     Plan {

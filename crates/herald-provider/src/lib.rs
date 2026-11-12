@@ -22,6 +22,10 @@ use herald_core::{
 pub enum ProviderHealth {
     Ready,
     NotAuthenticated,
+    /// The check could not complete (a slow browser launch, a network stall).
+    /// Distinct from [`Self::Unavailable`]: the adapter is not known to be
+    /// broken, so a real operation may still work.
+    Unverified(String),
     Unavailable(String),
 }
 

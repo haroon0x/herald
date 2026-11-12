@@ -133,6 +133,8 @@ pub struct XConfig {
     /// Close the browser at the end of each operation.
     pub close_after: bool,
     /// Refuse every X write. Reads keep working. The strongest local switch.
+    /// Defaults to `true` here too, so a caller that forgets to set it gets
+    /// the safe behaviour rather than write access.
     pub read_only: bool,
     /// Explicit Chrome/Chromium binary. `None` uses autodetection.
     pub browser_executable: Option<PathBuf>,
@@ -147,7 +149,7 @@ impl Default for XConfig {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
-            read_only: false,
+            read_only: true,
             browser_executable: None,
         }
     }
@@ -801,6 +803,18 @@ impl XProvider {
     }
 }
 
+/// Map a health probe error onto the health taxonomy.
+///
+/// A timeout is not a verdict: a cold browser launch or a slow page must not
+/// make `herald providers` claim the adapter is unavailable when a read works.
+fn health_from_error(error: &ProviderError) -> ProviderHealth {
+    match error {
+        ProviderError::NotAuthenticated => ProviderHealth::NotAuthenticated,
+        ProviderError::Timeout => ProviderHealth::Unverified(error.to_string()),
+        other => ProviderHealth::Unavailable(other.to_string()),
+    }
+}
+
 #[async_trait]
 impl CommunicationProvider for XProvider {
     fn id(&self) -> ProviderId {
@@ -813,8 +827,7 @@ impl CommunicationProvider for XProvider {
         self.release(&mut slot).await;
         match result {
             Ok(()) => ProviderHealth::Ready,
-            Err(ProviderError::NotAuthenticated) => ProviderHealth::NotAuthenticated,
-            Err(error) => ProviderHealth::Unavailable(error.to_string()),
+            Err(error) => health_from_error(&error),
         }
     }
 
@@ -2164,6 +2177,22 @@ mod tests {
             ProviderHealth::Unavailable(reason) => assert!(reason.contains("challenge")),
             other => panic!("expected unavailable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn health_maps_a_timeout_to_unverified_not_unavailable() {
+        match health_from_error(&ProviderError::Timeout) {
+            ProviderHealth::Unverified(reason) => assert!(reason.contains("timed out")),
+            other => panic!("expected unverified, got {other:?}"),
+        }
+        assert_eq!(
+            health_from_error(&ProviderError::NotAuthenticated),
+            ProviderHealth::NotAuthenticated
+        );
+        assert!(matches!(
+            health_from_error(&ProviderError::RateLimited),
+            ProviderHealth::Unavailable(_)
+        ));
     }
 
     #[test]

@@ -64,6 +64,8 @@ posting lane and no auto-send. Nothing sends itself.
 | IMAP reads (sessions, headers, flags, References threading) | `herald-provider/src/imap.rs` |
 | X parsing, selectors, ledgers, Chrome client | `herald-provider/src/x.rs` |
 | Approvals, reconciliation, execution | `apps/agent/src/send.rs` |
+| Drafting from a thread (`herald reply`) | `apps/agent/src/commands/reply.rs` |
+| The draft prompt and its untrusted wrapper | `herald-core/src/intent.rs` |
 | CLI command dispatch | `apps/agent/src/commands/mod.rs` |
 | Local browser UI and its assets | `apps/agent/src/ui.rs`, `apps/agent/src/ui/` |
 | Config file format and precedence | `herald-config/src/model.rs` |

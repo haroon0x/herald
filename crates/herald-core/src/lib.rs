@@ -17,7 +17,7 @@ pub mod time;
 
 pub use action::{
     Action, ActionPlan, DraftAction, Operation, ReadAction, ReadOperation, SendAction, Target,
-    ThreadId, body_hash, canonical_body_text, validate_plan,
+    ThreadId, body_hash, canonical_body_text, validate_plan, validate_target,
 };
 pub use diff::{DiffKind, DiffSegment, word_diff};
 pub use error::PlanError;

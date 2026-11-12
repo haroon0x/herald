@@ -149,8 +149,10 @@ $ herald doctor
 [ok]   storage                4 messages, 9 audit events, 0 pending approval(s)
 [ok]   provider fake          ready
 [ok]   provider maildir       ready
+[ok]   provider imap          not configured (optional)
+[warn] provider x             provider request timed out; the check did not complete
 [ok]   provider gmail         planned; no adapter in this build
-[ok]   provider x             planned; no adapter in this build
+[ok]   draft acceptance       100% unedited (1 decided; too few to judge)
 [ok]   maildir                /home/you/Mail
 [ok]   sent folder            /home/you/Mail/.Sent (exists)
 [ok]   smtp                   smtp.example.com:587 (Starttls)
@@ -194,7 +196,9 @@ ambiguous or when scripting. The id is still re-resolved and checked at approve
 time.
 `--body-env <VAR>` reads the exact outbound body from the environment variable
 `VAR` instead of any model draft (no drafting is attempted). It is for callers
-that already hold the body and the body never travels in argv. An unset or
+that already hold the body — the UI and tests today — and the body never
+travels in argv. `herald reply` is the CLI path that goes the other way: it
+drafts a body and queues it without a shell round trip. An unset or
 whitespace-only variable is rejected with `invalid_plan`. The plan still
 passes validation and policy: with `--enable-send` the body is queued as an
 approval, never sent directly.
@@ -273,6 +277,71 @@ To discard it:
 
 Other `status` values: `succeeded` (with `outcome`), `clarification_required`
 (with `question`), `no_plan`.
+
+### `herald reply`
+
+```text
+herald reply <thread-id> [--convey TEXT] [--provider P] [--engine rules|auto|model]
+                         [--enable-send]
+```
+
+Drafts one reply **from the conversation itself**. The thread id comes from the
+user, so the model never chooses a target here: it writes text and nothing
+else.
+
+1. Reads the thread (`get_thread`). An unknown id is `not_found`; nothing is
+   drafted or queued.
+2. Builds the draft prompt with the last three messages wrapped as untrusted
+   data (4,000 characters, tag-neutralised), addressed to the last sender.
+3. Asks the model for the body. `--convey` is what the reply should get across;
+   without it the instruction is "answer the last message".
+4. Runs the body through the normal ladder: `validate_plan` → `authorize` →
+   either a printed draft (default) or a pending approval with `--enable-send`.
+
+Without `--enable-send` this is a read-only operation: it prints the body, its
+hash, and the applied tone/length, then exits 0. Nothing is queued.
+
+With `--enable-send` the exact body becomes an approval, exactly like `ask`:
+re-resolved at approve time, hash re-checked, provider-side verification, and
+`uncertain` reconciled rather than retried. The approval also records that the
+body was model-drafted, which is what feeds `herald doctor`'s draft acceptance
+line.
+
+Drafting requires a model:
+
+```console
+$ herald reply t-founder
+error: reply drafting needs a model; set [model] backend or pass --engine model
+```
+
+A draft (nothing queued):
+
+```console
+$ herald reply t-founder --convey "say I'll review it"
+provider:   fake
+operation:  prepare_reply
+target:     thread t-founder
+body:       Thanks — I'll review it today.
+draft:     prepared locally (nothing sent)
+hash:       2f1c…
+length:     6 words, 31 chars
+
+$ herald reply t-founder --convey "say I'll review it" --enable-send
+...
+Approval required
+action:     …
+body:       Thanks — I'll review it today.
+hash:       2f1c…
+diff:       vs last message: +6 −0 words
+expires:    2026-11-15 11:20:00Z
+
+Nothing has been sent. To send exactly this body:
+  herald approve <action-id>
+```
+
+`--json` reports `status: "succeeded"` for a draft and
+`status: "awaiting_approval"` for a queued send; the approval envelope adds
+`"drafted": true`. Like `ask`, a send is never executed by this command.
 
 ### `herald plan`
 
@@ -494,14 +563,17 @@ herald providers
 ```console
 $ herald providers
 PROVIDER   STATUS             DEFAULT  DETAIL
-fake       ready                       adapter available
-maildir    ready              *          adapter available
+fake       ready              *
+maildir    not configured              adapter exists but is not configured; run `herald init`
+imap       not configured              adapter exists but is not configured; run `herald init`
+x          unverified                  provider request timed out; a read may still work
 gmail      planned                      no adapter in this build; plans are inert
-x          not configured               adapter exists but is not configured; run `herald init`
 ```
 
 `health()` is a real check: for `x` it launches the browser and reads the home
 timeline, so it reports `not authenticated` until `herald x login` succeeds.
+A check that times out reports `unverified`, not `unavailable`: a cold browser
+launch is not the same as a broken adapter, and a read may still work.
 
 `data`: `{"providers":[{"provider","status","detail","implemented","default"}]}`.
 

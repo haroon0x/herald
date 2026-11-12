@@ -139,6 +139,60 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
         ));
     }
 
+    // X writes are browser automation against the user's own signed-in
+    // session. That is the adapter's riskiest behaviour, so it must be visible
+    // in a diagnosis rather than buried in a config file.
+    if let Some(x) = &app.config.x {
+        checks.push(if x.read_only {
+            Check::ok("x writes", "read_only = true; reads only")
+        } else {
+            Check::warn(
+                "x writes",
+                "read_only = false; approved replies/DMs drive your signed-in browser session",
+            )
+        });
+    }
+
+    // The product metric the roadmap is gated on: of the model-drafted sends
+    // a human decided on, how many went out with the model's exact words?
+    // Zero decisions is "not measured yet", not a failure. The 40% line is the
+    // roadmap's; below it the model path is not earning its complexity.
+    let acceptance = app.store.draft_acceptance()?;
+    checks.push(match acceptance.unedited_rate() {
+        None => Check::ok(
+            "draft acceptance",
+            "not measured yet; `herald reply <thread> --enable-send` records it",
+        ),
+        Some(rate) if acceptance.drafted < 5 => Check::ok(
+            "draft acceptance",
+            format!(
+                "{:.0}% unedited ({} decided; too few to judge)",
+                rate * 100.0,
+                acceptance.drafted
+            ),
+        ),
+        Some(rate) if rate < 0.4 => Check::warn(
+            "draft acceptance",
+            format!(
+                "{:.0}% unedited ({} of {}); below the 40% line — the drafts are not being sent as-is",
+                rate * 100.0,
+                acceptance.unedited,
+                acceptance.drafted
+            ),
+        ),
+        Some(rate) => Check::ok(
+            "draft acceptance",
+            format!(
+                "{:.0}% unedited ({} of {}; {} edited, {} abandoned)",
+                rate * 100.0,
+                acceptance.unedited,
+                acceptance.drafted,
+                acceptance.edited,
+                acceptance.abandoned
+            ),
+        ),
+    });
+
     // Health probes run concurrently: a slow provider (a browser launch, a
     // network timeout) must not hold every other provider hostage. Checks
     // stay in `ProviderId::ALL` order.
@@ -151,6 +205,9 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
                         ProviderHealth::Ready => (Level::Ok, "ready".to_string()),
                         ProviderHealth::NotAuthenticated => {
                             (Level::Warn, "not authenticated".to_string())
+                        }
+                        ProviderHealth::Unverified(reason) => {
+                            (Level::Warn, format!("{reason}; the check did not complete"))
                         }
                         ProviderHealth::Unavailable(reason) => (Level::Fail, reason),
                     };
@@ -244,14 +301,19 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
     match app.config.model.backend {
         ModelBackend::None => checks.push(Check::ok("model", "none; rules only")),
         ModelBackend::OpenAi => {
-            checks.push(Check::ok(
-                "model",
-                format!(
-                    "openai-compatible {} ({})",
-                    app.config.model.endpoint.as_deref().unwrap_or("?"),
-                    app.config.model.model_name.as_deref().unwrap_or("?")
-                ),
-            ));
+            let endpoint = app.config.model.endpoint.as_deref().unwrap_or("?");
+            let name = app.config.model.model_name.as_deref().unwrap_or("?");
+            checks.push(if endpoint_is_loopback(endpoint) {
+                Check::ok(
+                    "model",
+                    format!("openai-compatible {endpoint} ({name}); loopback"),
+                )
+            } else {
+                Check::warn(
+                    "model",
+                    format!("openai-compatible {endpoint} ({name}); prompts leave this machine"),
+                )
+            });
         }
         ModelBackend::OpenCode => {
             let binary = std::env::var_os("HERALD_OPENCODE_PATH")
@@ -264,7 +326,13 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
                 .unwrap_or(herald_runtime::opencode::DEFAULT_MODEL);
             match probe_version(&binary, std::time::Duration::from_secs(10)).await {
                 Ok(version) => {
-                    checks.push(Check::ok("model", format!("opencode {version} ({model})")));
+                    checks.push(Check::warn(
+                        "model",
+                        format!(
+                            "opencode {version} ({model}); prompts go to the model provider behind \
+                             opencode (hosted by default) — use `managed` to keep them local"
+                        ),
+                    ));
                 }
                 Err(error) => checks.push(Check::fail(
                     "opencode",
@@ -355,11 +423,37 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
             "problems": problems,
             "warnings": warnings,
             "checks": items,
+            "draft_acceptance": {
+                "drafted": acceptance.drafted,
+                "unedited": acceptance.unedited,
+                "edited": acceptance.edited,
+                "abandoned": acceptance.abandoned,
+                "edit_words": acceptance.edit_words,
+                "unedited_rate": acceptance.unedited_rate(),
+            },
             "generated_at": format_time_ms(herald_core::time::now_ms()),
         }),
     );
 
     Ok(u8::from(problems > 0))
+}
+
+/// Whether an OpenAI-compatible endpoint stays on this machine.
+///
+/// Only a loopback host counts as local. Anything unparsable, including a Unix
+/// socket or a bare name, is treated as remote: the warning must fail closed,
+/// never claim privacy it cannot verify.
+fn endpoint_is_loopback(endpoint: &str) -> bool {
+    let after_scheme = endpoint.split("://").nth(1).unwrap_or(endpoint);
+    let authority = after_scheme.split('/').next().unwrap_or_default();
+    let host_and_port = authority.rsplit('@').next().unwrap_or(authority);
+    // Bracketed IPv6 keeps its colons; a bare host is cut at the port.
+    let host = if let Some(rest) = host_and_port.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(rest)
+    } else {
+        host_and_port.split(':').next().unwrap_or(host_and_port)
+    };
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 async fn probe_version(
@@ -407,4 +501,30 @@ fn find_binary(name: &str) -> Option<PathBuf> {
             .map(|dir| dir.join(name))
             .find(|candidate| candidate.is_file())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::endpoint_is_loopback;
+
+    #[test]
+    fn only_loopback_endpoints_count_as_local() {
+        for local in [
+            "http://127.0.0.1:11434/v1",
+            "http://localhost:8080",
+            "http://[::1]:8080/v1",
+            "https://localhost",
+        ] {
+            assert!(endpoint_is_loopback(local), "{local} should be loopback");
+        }
+        for remote in [
+            "https://api.openai.com/v1",
+            "http://192.168.1.10:8080",
+            "http://0.0.0.0:8080",
+            "http://config:8080",
+            "unix:/run/herald.sock",
+        ] {
+            assert!(!endpoint_is_loopback(remote), "{remote} should be remote");
+        }
+    }
 }

@@ -28,6 +28,10 @@ Key consequences:
 
 - **No daemon, no scheduler, no polling.** Nothing runs unless a command runs.
   The UI caches reads client-side for five minutes, but never refreshes them.
+  `contrib/systemd/herald-ui.service` keeps the *UI process* alive for a user
+  who wants it on login; it still does no background work, and every API call
+  it serves is a fresh `herald` subprocess. It is a convenience wrapper, not a
+  scheduler.
 - **No second execution path.** The UI never touches the database or a
   provider; the desktop shell never renders its own UI. Both delegate to
   `herald --json`, so the approval queue, hash checks, and idempotency are

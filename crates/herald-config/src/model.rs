@@ -834,7 +834,9 @@ pub struct XSettings {
     pub action_delay_ms: u64,
     pub typing_delay_ms: u64,
     pub close_after: bool,
-    /// Refuse every X write; reads keep working.
+    /// Refuse every X write; reads keep working. Defaults to `true`: driving a
+    /// logged-in browser session to post is the adapter's riskiest behaviour,
+    /// so writes must be enabled deliberately.
     pub read_only: bool,
 }
 
@@ -847,7 +849,7 @@ impl Default for XSettings {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
-            read_only: false,
+            read_only: true,
         }
     }
 }
@@ -861,7 +863,7 @@ impl XSettings {
             action_delay_ms: 1_800,
             typing_delay_ms: 20,
             close_after: true,
-            read_only: false,
+            read_only: true,
         }
     }
 }

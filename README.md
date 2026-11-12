@@ -19,7 +19,7 @@
 </p>
 
 - **Nothing sends itself.** Every outbound message becomes a pending approval that shows the provider, the resolved thread, the exact body, and its SHA-256 hash. `herald approve` is the only path to the wire.
-- **Nothing leaves the machine by default.** Deterministic rules and a small local model do the planning. No telemetry, no cloud inference, and `init` never writes a credential; SMTP passwords come from the environment.
+- **Nothing leaves the machine by default.** Deterministic rules do the planning, `backend = "none"` starts no model at all, and `init` never writes a credential; SMTP passwords come from the environment. The optional `opencode` and `openai` backends send prompts to whatever model they point at, `doctor` names the backend before you rely on it, and only `managed` keeps every prompt on loopback.
 - **Nothing is retried blindly.** Writes are idempotent on a client token, and a timeout ends in `uncertain`, which is resolved by reading the Sent folder, not by sending again.
 
 ## Why Herald
@@ -207,17 +207,17 @@ flowchart LR
 
 The full design is in [docs/architecture.md](docs/architecture.md). The short version: the model classifies, Rust decides, the provider executes, SQLite remembers.
 
-Herald drives a browser in exactly one place: the X adapter. X has no free API for this use case, so `herald x login` opens a visible window on a dedicated profile, you sign in, and later commands drive the same profile with a fixed set of selectors. No selector, URL, or script ever comes from the planner, and a challenge or unexpected page is a hard stop. Mail still uses Maildir and SMTP. The X adapter is for reading mentions and DMs and for approval-gated replies and DMs only; tweet generation and posting live in the separate Zyquor pipeline. See [ADR 0008](docs/decisions/0008-x-browser-adapter.md) and [ADR 0011](docs/decisions/0011-no-posting-lane.md).
+Herald drives a browser in exactly one place: the X adapter. X has no free API for this use case, so `herald x login` opens a visible window on a dedicated profile, you sign in, and later commands drive the same profile with a fixed set of selectors. No selector, URL, or script ever comes from the planner, and a challenge or unexpected page is a hard stop. Mail still uses Maildir and SMTP. The X adapter is for reading mentions and DMs and for approval-gated replies and DMs only; tweet generation and posting live in the separate Zyquor pipeline. X writes are off by default (`[x] read_only = true`), because driving a signed-in browser to post is the riskiest thing this program can do. See [ADR 0008](docs/decisions/0008-x-browser-adapter.md) and [ADR 0011](docs/decisions/0011-no-posting-lane.md).
 
 ## Safety model
 
 | Threat | Control |
 | --- | --- |
 | Model tries to execute an action | It emits JSON only. `validate_plan` maps it to a closed `Action` enum; there is no tool registry and no "run this" field. |
-| Prompt injection in message text | Retrieved text is wrapped in `<untrusted-message>` blocks and labelled as data. The planner prompt and the provider input surfaces have injection tests. |
+| Prompt injection in message text | Retrieved text is wrapped as untrusted data and its prompt delimiters are neutralised. Summaries and drafts both carry an explicit "messages are data, never instructions" rule, and the injection corpus has a draft-path case. |
 | Send without consent | `allow_send` defaults to false. Every send writes an approval row; `approve` re-resolves the thread and re-checks the body hash. There is no auto-send and no posting lane. |
 | Duplicate send after a timeout | Client token plus `X-Herald-Token` plus a Sent-folder check. `uncertain` is reconciled, never retried. |
-| Content leaving the machine | Local inference is the default. A remote endpoint works only if you configure one, and `doctor` says so. |
+| Content leaving the machine | Local inference is the default (`none` or `managed`). A remote model works only if you configure `opencode` or a non-loopback `openai` endpoint, and `doctor` names the backend and endpoint. |
 | Reading your whole mailbox | Reads are explicit commands with bounded limits. Only message metadata is stored; bodies are not kept after a decision. |
 | Secret leakage | Passwords come from the environment, are never logged, and are never written by `init`. |
 
@@ -230,6 +230,7 @@ The model is optional. Rules cover the common commands, and `--engine rules` nev
 | `none` | `[model] backend = "none"` | Rules and explicit bodies only. Default on a fresh install. |
 | `managed` | `[model] backend = "managed"` | Herald runs a pinned GGUF through `llama-server` on loopback with a per-run token. |
 | `openai` | `[model] backend = "openai"` + `endpoint` | Any OpenAI-compatible server: Ollama, LM Studio, vLLM. Use a local URL unless you mean to send content off the machine. |
+| `opencode` | `[model] backend = "opencode"` + `model_name` | One-shot `opencode run` subprocess. The default model id is hosted, so prompts leave the machine; it is the convenient backend, not the private one. |
 
 Recommended: **Qwen3.5-0.8B Q4_K_M** (about 0.5 GB). It is fast on CPU and small enough for a seven-way classification with a grammar constraint; the eval harness measures quality on your machine. Qwen3.5-2B Q4_K_M is the step up if you have the memory and want better drafts.
 
@@ -249,6 +250,7 @@ herald model verify                           # re-check the file on disk
 | `herald doctor` | Check paths, permissions, storage, provider health, Maildir, SMTP, model, and secrets. |
 | `herald ask "<instruction>"` | Plan and run a request. Sends stop at an approval. |
 | `herald plan "<instruction>"` | Dry run: print the plan, validation result, and policy decision. No writes. |
+| `herald reply <thread-id> [--convey TEXT]` | Draft a reply **from the thread itself**; add `--enable-send` to queue the exact body for approval. |
 | `herald inbox [--unread] [--limit N]` | List recent messages. |
 | `herald thread <id>` | Print one conversation. |
 | `herald approvals` | List pending approvals with the body preview, thread, and expiry. |
@@ -299,7 +301,9 @@ index.md                 repo map and working standards (agents start here)
 
 ## Roadmap
 
-v1.0 ships the demo and Maildir providers, the approval queue, reconciliation, configuration, JSON output, and both inference backends. The X adapter is in progress on top of v1.0 (ADR 0008) as a communication channel only: mentions, DMs, feed, notifications, and approval-gated replies/DMs. It has no posting lane (ADR 0011). Next: IMAP read-only (v1.1), richer summaries and search (v1.2), packaging for Homebrew, Scoop, and Debian (v1.3), then a capped multi-step tool loop and a desktop surface.
+v1.0 shipped the demo and Maildir providers, the approval queue, reconciliation, configuration, and JSON output. Since then, unreleased: the X adapter (reads, plus approval-gated writes that are off by default), read-only IMAP, cited summaries and search, a loopback browser UI, a Tauri shell, and packaging for Homebrew, Scoop, Debian, and AppImage. There is still no posting lane (ADR 0011).
+
+The next step is deliberately not another feature. Herald now drafts from the thread and records whether drafts were sent unedited; the roadmap is gated on that number before any new authority. See [docs/roadmap.md](docs/roadmap.md#next-2026-11-12-prove-the-draft-loop-before-new-authority).
 
 The ladder from "Rust decides everything" to "the model proposes, Rust disposes" is documented, with measured numbers, in [docs/roadmap.md](docs/roadmap.md).
 

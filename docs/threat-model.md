@@ -58,8 +58,15 @@ classifier or drafter could treat it as a command.
   `validate_plan`, target resolution against real provider data, and policy.
 - A send still needs a human approval that shows the body.
 
+- The draft prompt uses the same wrapper, and every value it interpolates is
+  tag-neutralised first: a body containing `</untrusted-thread>` or
+  `<convey>` renders as inert text, so it cannot close the block or reopen the
+  instruction.
+
 **Test.** `summary_prompt_wraps_every_message_as_untrusted` in
-`apps/agent/src/planner.rs`; `injection_text_stays_inert_data` in the
+`apps/agent/src/planner.rs`; `draft_prompt_neutralises_closing_tags_in_a_body`
+and `draft_prompt_escapes_the_sender_attribute` in
+`crates/herald-core/src/intent.rs`; `injection_text_stays_inert_data` in the
 X adapter. Every provider adds a corpus case for body, subject, sender, and
 header injection.
 
@@ -306,10 +313,15 @@ there is no configuration field for it. The API token is random per run.
 leaves the machine.
 
 **Controls.** `backend = "none"` is the default. A remote endpoint requires an
-explicit `backend = "openai"` plus a URL. `doctor` prints the endpoint and
-states when it is not loopback. There is no Herald-operated endpoint.
+explicit `backend = "openai"` plus a URL, or `backend = "opencode"`, whose
+default model id is hosted. `doctor` prints the selected backend, the endpoint,
+and the model name; `--json` carries the same. There is no Herald-operated
+endpoint.
 
-**Residual.** A user who pastes a remote URL has made a deliberate choice.
+**Residual.** A user who selects a hosted backend has made a deliberate choice.
+The README, FAQ, and `docs/configuration.md` all say plainly that `opencode` is
+not private, because a trust product whose docs overstate its privacy has no
+product left.
 
 ### Parser and terminal injection
 

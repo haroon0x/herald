@@ -31,6 +31,9 @@ pub async fn run(app: &App) -> Result<u8, AppError> {
                             "not authenticated",
                             "sign in or configure credentials".to_string(),
                         ),
+                        ProviderHealth::Unverified(reason) => {
+                            ("unverified", format!("{reason}; a read may still work"))
+                        }
                         ProviderHealth::Unavailable(reason) => ("unavailable", reason),
                     };
                     Row {

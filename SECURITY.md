@@ -18,9 +18,12 @@ affects you, report it anyway and include the version output of
 
 ## Dependency advisories
 
-Both `cargo deny check` (RustSec) and GitHub Dependabot are watched. A finding is
-either fixed or recorded here with the reason it is accepted; nothing is silently
-ignored. `cargo deny check` is green as of 2026-11-12.
+Dependency advisories are reviewed with `cargo deny check` (RustSec) whenever a
+dependency changes; that is the gate. GitHub Dependabot is not used: its config
+and PRs were removed on 2026-11-12, and vulnerability alerts were turned off, so
+the two records below are the ones it found before it was removed. A finding is
+either fixed or recorded here with the reason it is accepted; nothing is
+silently ignored. `cargo deny check` is green as of 2026-11-12.
 
 Fixed: `libsqlite3-sys` 0.30.1 (RUSTSEC-2026-0459 / CVE-2026-119375) was bumped
 to 0.39.1 via `rusqlite` 0.41 in commit `619a488`.
